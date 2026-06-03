@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192" role="img" aria-label="CET Reader">
+  <rect width="192" height="192" rx="44" fill="#c8252c"/>
+  <path d="M48 48h64c17.7 0 32 14.3 32 32v72H72c-13.3 0-24-10.7-24-24V48z" fill="#fff"/>
+  <path d="M70 70h42c6.6 0 12 5.4 12 12v44H78c-4.4 0-8-3.6-8-8V70z" fill="#fff0f1"/>
+  <path d="M88 88v36l30-18-30-18z" fill="#c8252c"/>
+  <text x="96" y="160" text-anchor="middle" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif" font-size="25" font-weight="800" fill="#fff">CET</text>
+</svg>
