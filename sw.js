@@ -1,4 +1,4 @@
-const CACHE_NAME = "cet-reader-cache-v2026-06-03-2";
+const CACHE_NAME = "cet-reader-cache-v2026-06-04-2";
 const CACHE_PREFIX = "cet-reader-cache";
 
 const CORE_ASSETS = [
@@ -11,6 +11,8 @@ const CORE_ASSETS = [
   "./data/0529.json",
   "./data/0530.json",
   "./data/0601.json",
+  "./data/0602.json",
+  "./data/0603.json",
   "./icons/icon-192.svg",
   "./icons/icon-512.svg"
 ];

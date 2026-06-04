@@ -3,10 +3,12 @@
   "use strict";
 
   // constants
-  const APP_VERSION = "pwa-2026-06-03-2";
+  const APP_VERSION = "pwa-2026-06-04-2";
   const STORAGE_KEY = "cet-reader-basic-state-v1";
   const CACHE_PREFIX = "cet-reader-cache";
-  const TYPE_LABEL = { word: "单词", phrase: "词组", sentence: "句子" };
+  const TYPE_LABEL = { word: "单词", phrase: "词组", sentence: "句子", root: "词根", correction: "纠错", summary: "总结" };
+  const ENTRY_TYPES = ["word", "phrase", "sentence", "root", "correction", "summary"];
+  const LEARNABLE_TYPES = new Set(["word", "phrase", "sentence"]);
   const DEFAULT_SETTINGS = {
     repeatEnglish: 2,
     speakChinese: true,
@@ -20,6 +22,7 @@
     englishVoiceURI: "",
     chineseVoiceURI: "",
     random: false,
+    loopPlayback: false,
     recallMode: false
   };
 
@@ -40,10 +43,13 @@
     difficultEntryIds: {},
     userOverrides: {},
     userLibraries: [],
+    progressByLibrary: {},
     pendingImportEntries: [],
     pendingImportFileName: "",
     currentEditEntryId: "",
     availableVoices: [],
+    lastSpeechError: "",
+    lastSpeechTimeout: "",
     settings: { ...DEFAULT_SETTINGS },
     listMode: "current",
     errors: []
@@ -52,6 +58,7 @@
   let wakeLock = null;
   let voicesReady = null;
   let wakeLockNoticeShown = false;
+  let playbackSeenEntryIds = new Set();
 
   window.cetReaderState = state;
 
@@ -92,7 +99,7 @@
         <button id="loadLibraryBtn">打开词库</button>
         <p><input id="searchInput" placeholder="搜索英文或中文" style="width:100%;min-height:40px"></p>
         <p>
-          <select id="typeFilter"><option value="all">全部</option><option value="word">单词</option><option value="phrase">词组</option><option value="sentence">句子</option></select>
+          <select id="typeFilter"><option value="all">全部</option><option value="word">单词</option><option value="phrase">词组</option><option value="sentence">句子</option><option value="root">词根</option><option value="correction">纠错</option><option value="summary">总结</option><option value="suspected">疑似错误</option></select>
           <label><input id="randomToggle" type="checkbox"> 随机</label>
         </p>
         <article style="border:1px solid #ddd;border-radius:16px;padding:16px">
@@ -140,6 +147,15 @@
       state.difficultEntryIds = validMap(saved.difficultEntryIds);
       state.userOverrides = validMap(saved.userOverrides);
       state.userLibraries = normalizeSavedUserLibraries(saved.userLibraries);
+      state.progressByLibrary = validMap(saved.progressByLibrary);
+      if (!saved.progressByLibrary && state.currentLibraryId) {
+        state.progressByLibrary[state.currentLibraryId] = {
+          currentIndex: state.currentIndex,
+          currentEntryId: "",
+          updatedAt: Date.now(),
+          migratedFromLegacy: true
+        };
+      }
       state.settings = { ...DEFAULT_SETTINGS, ...(saved.settings || {}) };
     } catch (error) {
       logError("loadState", error, "localStorage 数据损坏，已回退默认状态");
@@ -160,6 +176,7 @@
         difficultEntryIds: state.difficultEntryIds,
         userOverrides: state.userOverrides,
         userLibraries: state.userLibraries,
+        progressByLibrary: state.progressByLibrary,
         settings: state.settings
       }));
     } catch (error) {
@@ -306,6 +323,7 @@
   }
 
   async function loadLibrary(libraryId) {
+    if (state.currentLibraryId && state.currentLibrary) saveCurrentProgress("before-switch-library");
     const meta = state.libraries.find((lib) => lib.id === libraryId) || state.libraries[0];
     if (!meta) {
       showStatus("没有找到可加载词库");
@@ -328,8 +346,8 @@
       state.currentLibraryId = library.id;
       state.currentLibrary = library;
       state.entries = library.entries;
-      state.currentIndex = 0;
       rebuildVisibleEntries();
+      restoreProgressForLibrary(library.id);
       saveState();
       render();
       showStatus(`已加载：${library.name}，${library.entries.length} 条`);
@@ -389,12 +407,16 @@
       meaning: cleanDisplayText(raw.meaning || raw.translation || raw.chinese || ""),
       morph: cleanDisplayText(raw.morph || raw.structure || ""),
       example: cleanDisplayText(raw.example || raw.examples || ""),
-      type: ["word", "phrase", "sentence"].includes(raw.type) ? raw.type : inferEntryType(raw.term || ""),
+      type: ENTRY_TYPES.includes(raw.type) ? raw.type : inferEntryType(raw.term || ""),
+      rawType: raw.type || "",
+      wrong: cleanDisplayText(raw.wrong || ""),
+      note: cleanDisplayText(raw.note || ""),
       source: raw.source || library?.source || "",
       warnings: Array.isArray(raw.warnings) ? raw.warnings : [],
       suspectedError: Boolean(raw.suspectedError)
     };
     validateEntry(entry);
+    classifyEntry(entry);
     return entry.term ? entry : null;
   }
 
@@ -407,7 +429,7 @@
     if (!entry.id) entry.warnings.push("missing-id");
     if (!entry.term) entry.warnings.push("missing-term");
     if (!entry.meaning) entry.warnings.push("missing-meaning");
-    if (!["word", "phrase", "sentence"].includes(entry.type)) entry.type = inferEntryType(entry.term);
+    if (!ENTRY_TYPES.includes(entry.type)) entry.type = inferEntryType(entry.term);
     if (chineseCharRatio(entry.term) > 0.35) {
       entry.suspectedError = true;
       entry.warnings.push("term-has-too-much-chinese");
@@ -419,9 +441,79 @@
     return entry;
   }
 
+  function classifyEntry(entry) {
+    normalizeCorrectionEntry(entry);
+    if (isCorrectionLike(entry)) entry.type = "correction";
+    else if (isRootLike(entry)) entry.type = "root";
+    else if (isSummaryLike(entry)) entry.type = "summary";
+    if (!hasValidChineseMeaning(entry)) {
+      entry.suspectedError = true;
+      if (!entry.warnings.includes("meaning-missing-or-not-chinese")) entry.warnings.push("meaning-missing-or-not-chinese");
+    }
+    if (hasTooMuchEnglishInMeaning(entry)) {
+      entry.suspectedError = true;
+      if (!entry.warnings.includes("meaning-too-much-english")) entry.warnings.push("meaning-too-much-english");
+    }
+    return entry;
+  }
+
+  function normalizeCorrectionEntry(entry) {
+    const term = entry.term.toLowerCase();
+    const corrections = {
+      reconstitude: { term: "reconstitute", meaning: "重新组成；重新配制；加水复原" },
+      "rest assure": { term: "rest assured", meaning: "放心；请放心；可以确信" },
+      "cracking code": { term: "cracking the code", meaning: "破解密码；破译规律；理解关键方法" }
+    };
+    if (corrections[term]) {
+      const fix = corrections[term];
+      entry.wrong = entry.term;
+      entry.note = `原资料写作 ${entry.term}，建议改为 ${fix.term}`;
+      entry.term = fix.term;
+      entry.meaning = fix.meaning;
+      entry.type = "correction";
+      entry.suspectedError = true;
+      if (!entry.warnings.includes("manual-correction")) entry.warnings.push("manual-correction");
+    }
+    if (/catalogue\s*\/\s*catalog|catalog\s*\/\s*catalogue/i.test(entry.term)) {
+      entry.term = "catalogue / catalog";
+      entry.meaning = "目录；清单；登记；编目";
+    }
+    return entry;
+  }
+
+  function isCorrectionLike(entry) {
+    const combined = `${entry.term} ${entry.meaning} ${entry.example}`.toLowerCase();
+    return entry.type === "correction" || combined.includes("=>") || /reconstitude|rest assure|cracking code/.test(combined);
+  }
+
+  function isRootLike(entry) {
+    const term = entry.term.toLowerCase().replace(/\s+/g, "");
+    const rootTerms = new Set(["rupt", "mort", "fin", "dis-", "fine/fin-", "fine/fin"]);
+    const hasDerivativeList = englishCharRatio(`${entry.meaning} ${entry.example}`) > 0.65 && /[,，;；/]/.test(`${entry.meaning} ${entry.example}`);
+    return entry.type === "root" || rootTerms.has(term) || (/^[a-z-]{2,8}$/.test(term) && hasDerivativeList && !containsChinese(entry.meaning));
+  }
+
+  function isSummaryLike(entry) {
+    const term = entry.term;
+    const englishWords = term.match(/[A-Za-z]+/g) || [];
+    const separators = (term.match(/[,，;；/]/g) || []).length;
+    return entry.type === "summary"
+      || term.length > 90
+      || (englishWords.length >= 8 && separators >= 3)
+      || (!containsChinese(entry.meaning) && englishWords.length >= 5 && entry.meaning.length > 20);
+  }
+
+  function hasValidChineseMeaning(entry) {
+    return Boolean(entry.meaning) && containsChinese(entry.meaning);
+  }
+
+  function hasTooMuchEnglishInMeaning(entry) {
+    return Boolean(entry.meaning) && englishCharRatio(entry.meaning) > 0.7 && !containsChinese(entry.meaning);
+  }
+
   function applyOverride(entry) {
     const override = state.userOverrides[state.currentLibraryId]?.[entry.id];
-    return override ? validateEntry({ ...entry, ...override, id: entry.id }) : entry;
+    return override ? classifyEntry(validateEntry({ ...entry, ...override, id: entry.id })) : entry;
   }
 
   function isEntryHidden(entryId) {
@@ -447,24 +539,82 @@
       entries = entries.filter((entry) => hidden.has(entry.id));
     }
 
-    if (state.filterType !== "all") {
+    if (state.filterType === "all") {
+      entries = entries.filter((entry) => LEARNABLE_TYPES.has(entry.type));
+    } else if (state.filterType === "suspected") {
+      entries = entries.filter((entry) => entry.suspectedError);
+    } else {
       entries = entries.filter((entry) => entry.type === state.filterType);
     }
 
     if (keyword) {
       entries = entries.filter((entry) => {
-        const haystack = [entry.term, entry.meaning, entry.morph, entry.example].join(" ").toLowerCase();
+        const haystack = [entry.term, entry.meaning, entry.morph, entry.example, entry.wrong, entry.note].join(" ").toLowerCase();
         return haystack.includes(keyword);
       });
     }
 
     state.visibleEntries = entries;
-    if (state.currentIndex >= entries.length) state.currentIndex = Math.max(0, entries.length - 1);
-    if (state.currentIndex < 0) state.currentIndex = 0;
+    clampCurrentIndex();
+  }
+
+  function getProgress(libraryId = state.currentLibraryId) {
+    if (!state.progressByLibrary[libraryId]) {
+      state.progressByLibrary[libraryId] = { currentIndex: 0, currentEntryId: "", updatedAt: 0 };
+    }
+    return state.progressByLibrary[libraryId];
+  }
+
+  function findEntryIndexById(entryId) {
+    if (!entryId) return -1;
+    return state.visibleEntries.findIndex((entry) => entry.id === entryId);
+  }
+
+  function clampCurrentIndex() {
+    const length = state.visibleEntries.length;
+    if (!length) {
+      state.currentIndex = 0;
+      return 0;
+    }
+    state.currentIndex = Math.max(0, Math.min(Number(state.currentIndex) || 0, length - 1));
+    return state.currentIndex;
+  }
+
+  function saveCurrentProgress(reason = "update") {
+    if (!state.currentLibraryId) return;
+    const entry = getCurrentEntry();
+    state.progressByLibrary[state.currentLibraryId] = {
+      currentIndex: clampCurrentIndex(),
+      currentEntryId: entry?.id || "",
+      updatedAt: Date.now(),
+      reason
+    };
+  }
+
+  function restoreProgressForLibrary(libraryId = state.currentLibraryId) {
+    const progress = getProgress(libraryId);
+    const byId = findEntryIndexById(progress.currentEntryId);
+    if (byId >= 0) state.currentIndex = byId;
+    else state.currentIndex = Number(progress.currentIndex) || 0;
+    clampCurrentIndex();
+    saveCurrentProgress("restore-progress");
+  }
+
+  function setCurrentIndex(index, reason = "set-index", shouldRender = true) {
+    state.currentIndex = Number(index) || 0;
+    clampCurrentIndex();
+    saveCurrentProgress(reason);
+    saveState();
+    if (shouldRender) render();
+  }
+
+  function getCurrentEntry() {
+    clampCurrentIndex();
+    return state.visibleEntries[state.currentIndex] || null;
   }
 
   function currentEntry() {
-    return state.visibleEntries[state.currentIndex] || null;
+    return getCurrentEntry();
   }
 
   // render
@@ -474,10 +624,12 @@
     renderLibraryOptions();
     renderLibraryActions();
     renderCard();
+    renderActionStates();
     renderStats();
     renderList();
     renderPlayer();
     renderErrorLog();
+    updateSpeechDiagnosticsUI();
   }
 
   function syncControls() {
@@ -499,6 +651,8 @@
     if (spell) spell.checked = Boolean(state.settings.spellWords);
     const autoPlay = $("autoPlayToggle");
     if (autoPlay) autoPlay.checked = Boolean(state.settings.autoPlay);
+    const loopPlayback = $("loopPlaybackToggle");
+    if (loopPlayback) loopPlayback.checked = Boolean(state.settings.loopPlayback);
     const repeat = $("repeatInput");
     if (repeat) repeat.value = state.settings.repeatEnglish;
     const rate = $("rateInput");
@@ -558,7 +712,10 @@
     text("librarySub", `${state.visibleEntries.length} 条可学 · 当前 ${state.visibleEntries.length ? state.currentIndex + 1 : 0}/${state.visibleEntries.length}`);
 
     if (!entry) {
-      text("termText", state.currentLibrary ? "当前筛选没有条目" : "请选择词库");
+      const emptyMessage = state.searchKeyword
+        ? "没有匹配条目"
+        : state.currentLibrary ? "当前筛选没有条目" : "请选择词库";
+      text("termText", emptyMessage);
       text("meaningText", "");
       text("morphText", "");
       text("exampleText", "");
@@ -570,7 +727,12 @@
 
     text("termText", entry.term);
     text("meaningText", state.settings.recallMode ? "（背诵模式：点击显示答案）" : entry.meaning);
-    text("morphText", state.settings.recallMode ? "" : entry.morph);
+    const detailText = entry.type === "correction"
+      ? [entry.wrong ? `错误写法：${entry.wrong}` : "", entry.note, entry.morph].filter(Boolean).join("\n")
+      : entry.type === "root"
+        ? [entry.morph || "词根/构词法资料", entry.note].filter(Boolean).join("\n")
+        : entry.morph;
+    text("morphText", state.settings.recallMode ? "" : detailText);
     text("exampleText", state.settings.recallMode ? "" : entry.example);
     text("entryType", TYPE_LABEL[entry.type] || entry.type);
     text("entryIndex", `${state.currentIndex + 1} / ${state.visibleEntries.length}`);
@@ -585,6 +747,18 @@
     text("difficultCurrentBtn", isDifficult(entry.id) ? "取消不熟" : "标为不熟");
     text("speechPreview", buildPlayPlan(entry).map((item) => `${item.kind} [${item.lang}]: ${item.text}`).join("\n"));
     setupMediaSession(entry);
+  }
+
+  function renderActionStates() {
+    const hasEntry = Boolean(getCurrentEntry());
+    ["playPauseBtn", "replayBtn", "removeCurrentBtn", "difficultCurrentBtn", "editCurrentBtn", "nextCardBtn"].forEach((id) => {
+      const el = $(id);
+      if (el) el.disabled = !hasEntry;
+    });
+    ["prevBtn", "nextBtn"].forEach((id) => {
+      const el = $(id);
+      if (el) el.disabled = !state.visibleEntries.length;
+    });
   }
 
   function renderStats() {
@@ -630,7 +804,7 @@
   }
 
   function renderPlayer() {
-    text("playPauseBtn", state.isPlaying ? "暂停" : "播放");
+    text("playPauseBtn", state.isPlaying ? "停止" : "播放");
     text("playerStatus", state.isPlaying ? "正在播放" : "空闲");
     if ("mediaSession" in navigator) {
       try {
@@ -696,6 +870,7 @@
 
   function buildPlayPlan(entry) {
     if (!entry) return [];
+    if (!LEARNABLE_TYPES.has(entry.type)) return [];
     const plan = [];
     const repeats = Math.max(1, Math.min(5, Number(state.settings.repeatEnglish) || 1));
     const term = sanitizeForSpeech(entry.term, "en-US", "term");
@@ -715,10 +890,27 @@
       if (morph) plan.push({ kind: "morph", lang: "zh-CN", text: morph });
     }
     if (state.settings.speakExample && entry.example) {
-      const example = sanitizeForSpeech(entry.example, "en-US", "example");
-      if (example) plan.push({ kind: "example", lang: "en-US", text: example });
+      plan.push(...mixedSpeechItems(entry.example, "example"));
     }
     return plan;
+  }
+
+  function mixedSpeechItems(value, kind) {
+    const raw = String(value || "").trim();
+    if (!raw) return [];
+    const parts = raw
+      .replace(/([.!?])([\u4e00-\u9fff])/g, "$1|$2")
+      .replace(/([。！？])([A-Za-z])/g, "$1|$2")
+      .split("|")
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const items = [];
+    for (const part of parts.length ? parts : [raw]) {
+      const lang = chineseCharRatio(part) > 0.25 ? "zh-CN" : "en-US";
+      const textValue = sanitizeForSpeech(part, lang, kind);
+      if (textValue) items.push({ kind, lang, text: textValue });
+    }
+    return items;
   }
 
   function spellingForSpeech(term) {
@@ -727,30 +919,72 @@
     return word.toLowerCase().split("").join(", ");
   }
 
+  function isSpeechSupported() {
+    return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+  }
+
   async function speakText(textValue, lang) {
-    await ensureVoicesReady();
+    return speakTextWithTimeout(textValue, lang);
+  }
+
+  async function speakTextWithTimeout(textValue, lang, options = {}) {
+    const cleanText = String(textValue || "").trim();
+    if (!cleanText) return;
+    if (!isSpeechSupported()) {
+      const message = `当前浏览器不支持 speechSynthesis；browser=${navigator.userAgent || "unknown"}`;
+      state.lastSpeechError = message;
+      updateSpeechDiagnosticsUI();
+      throw new Error(message);
+    }
+    await waitForVoicesWithTimeout(options.voiceWaitMs || 450);
+    if (!state.availableVoices.length) {
+      state.lastSpeechError = "speechSynthesis 可用，但 voices 为空：请检查系统语音包，或换 Safari / Chrome / Edge。";
+      updateSpeechDiagnosticsUI();
+    }
     return new Promise((resolve, reject) => {
-      if (!("speechSynthesis" in window) || !("SpeechSynthesisUtterance" in window)) {
-        reject(new Error(`当前浏览器不支持 speechSynthesis；browser=${navigator.userAgent || "unknown"}`));
-        return;
-      }
-      const utterance = new SpeechSynthesisUtterance(textValue);
+      const utterance = new SpeechSynthesisUtterance(cleanText);
       utterance.lang = lang;
       utterance.rate = Number(state.settings.rate) || 0.9;
       utterance.pitch = Number(state.settings.pitch) || 1;
       utterance.volume = Number.isFinite(Number(state.settings.volume)) ? Number(state.settings.volume) : 1;
       const voice = pickVoice(lang);
       if (voice) utterance.voice = voice;
-      utterance.onend = () => resolve();
-      utterance.onerror = (event) => reject(new Error([
-        event.error || "朗读失败",
+      let settled = false;
+      const timeoutMs = estimateSpeechTimeout(cleanText);
+      const timer = setTimeout(() => {
+        if (settled) return;
+        settled = true;
+        state.lastSpeechTimeout = `${lang} 超时 ${timeoutMs}ms：${cleanText.slice(0, 60)}`;
+        updateSpeechDiagnosticsUI();
+        window.speechSynthesis.cancel();
+        reject(new Error(`朗读超时：${state.lastSpeechTimeout}`));
+      }, timeoutMs);
+      const settle = (fn, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        fn(value);
+      };
+      utterance.onend = () => settle(resolve);
+      utterance.onerror = (event) => {
+        const message = [
+          event.error || "朗读失败",
         `lang=${lang}`,
         `voice=${voice ? `${voice.name}/${voice.lang}` : "none"}`,
-        `text=${String(textValue || "").slice(0, 80)}`,
+          `text=${cleanText.slice(0, 80)}`,
         `browser=${navigator.userAgent || "unknown"}`
-      ].join("；")));
+        ].join("；");
+        state.lastSpeechError = message;
+        updateSpeechDiagnosticsUI();
+        settle(reject, new Error(message));
+      };
       window.speechSynthesis.speak(utterance);
     });
+  }
+
+  function estimateSpeechTimeout(value) {
+    const length = String(value || "").length;
+    return Math.max(6000, Math.min(30000, 2500 + length * 180));
   }
 
   function pickVoice(lang) {
@@ -787,6 +1021,24 @@
     if (!("speechSynthesis" in window)) return;
     state.availableVoices = window.speechSynthesis.getVoices?.() || [];
     renderVoiceOptions();
+    updateSpeechDiagnosticsUI();
+  }
+
+  function waitForVoicesWithTimeout(ms = 800) {
+    if (!("speechSynthesis" in window)) return Promise.resolve([]);
+    refreshVoices();
+    if (state.availableVoices.length) return Promise.resolve(state.availableVoices);
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        refreshVoices();
+        resolve(state.availableVoices);
+      }, ms);
+      window.speechSynthesis.onvoiceschanged = () => {
+        clearTimeout(timer);
+        refreshVoices();
+        resolve(state.availableVoices);
+      };
+    });
   }
 
   function ensureVoicesReady() {
@@ -806,6 +1058,34 @@
       };
     });
     return voicesReady;
+  }
+
+  function getSpeechDiagnostics() {
+    const enVoice = pickVoice("en-US");
+    const zhVoice = pickVoice("zh-CN");
+    return {
+      supported: isSpeechSupported(),
+      voicesCount: state.availableVoices.length,
+      englishVoice: enVoice ? `${enVoice.name} / ${enVoice.lang}` : "未找到",
+      chineseVoice: zhVoice ? `${zhVoice.name} / ${zhVoice.lang}` : "未找到",
+      lastError: state.lastSpeechError || "无",
+      lastTimeout: state.lastSpeechTimeout || "无"
+    };
+  }
+
+  function updateSpeechDiagnosticsUI() {
+    const box = $("speechDiagnosticsBox");
+    if (!box) return;
+    const diag = getSpeechDiagnostics();
+    box.textContent = [
+      `speechSynthesis：${diag.supported ? "支持" : "不支持"}`,
+      `可用 voices：${diag.voicesCount}`,
+      `英文 voice：${diag.englishVoice}`,
+      `中文 voice：${diag.chineseVoice}`,
+      `最近错误：${diag.lastError}`,
+      `最近超时：${diag.lastTimeout}`,
+      "无声音建议：换 Safari / Chrome / Edge；检查系统 TTS 语音包；iOS PWA 锁屏后台可能受限制；微信/QQ/百度内置浏览器不保证稳定。"
+    ].join("\n");
   }
 
   function setupMediaSession(entry) {
@@ -868,7 +1148,9 @@
   async function playCurrent() {
     const entry = currentEntry();
     if (!entry) return;
+    const continuing = state.isPlaying;
     stopSpeaking(false);
+    if (!continuing) playbackSeenEntryIds = new Set();
     state.isPlaying = true;
     const token = ++state.playerToken;
     renderPlayer();
@@ -876,6 +1158,13 @@
       setupMediaSession(entry);
       await requestWakeLock();
       const plan = buildPlayPlan(entry);
+      if (!plan.length) {
+        state.isPlaying = false;
+        releaseWakeLock();
+        showStatus(`${TYPE_LABEL[entry.type] || "该条目"}不进入自动朗读`);
+        renderPlayer();
+        return;
+      }
       text("speechPreview", plan.map((item) => `${item.kind} [${item.lang}]: ${item.text}`).join("\n"));
       for (const item of plan) {
         if (token !== state.playerToken) return;
@@ -883,10 +1172,10 @@
       }
       if (token !== state.playerToken) return;
       addToList(state.learnedEntryIds, entry.id);
+      playbackSeenEntryIds.add(entry.id);
       saveState();
       if (state.isPlaying && state.settings.autoPlay) {
-        moveNextForPlayback();
-        if (state.visibleEntries.length) playCurrent();
+        if (moveNextForPlayback()) playCurrent();
       } else {
         state.isPlaying = false;
         releaseWakeLock();
@@ -918,6 +1207,8 @@
   }
 
   function replayCurrent() {
+    saveCurrentProgress("replay");
+    saveState();
     playCurrent();
   }
 
@@ -925,9 +1216,7 @@
     const shouldContinue = state.isPlaying;
     stopSpeaking(false);
     if (!state.visibleEntries.length) return;
-    state.currentIndex = (state.currentIndex + 1) % state.visibleEntries.length;
-    saveState();
-    render();
+    setCurrentIndex((state.currentIndex + 1) % state.visibleEntries.length, "manual-next", true);
     if (shouldContinue) playCurrent();
   }
 
@@ -935,23 +1224,69 @@
     const shouldContinue = state.isPlaying;
     stopSpeaking(false);
     if (!state.visibleEntries.length) return;
-    state.currentIndex = (state.currentIndex - 1 + state.visibleEntries.length) % state.visibleEntries.length;
-    saveState();
-    render();
+    setCurrentIndex((state.currentIndex - 1 + state.visibleEntries.length) % state.visibleEntries.length, "manual-prev", true);
     if (shouldContinue) playCurrent();
   }
 
+  function hasNextEntry() {
+    return state.currentIndex < state.visibleEntries.length - 1;
+  }
+
   function moveNextForPlayback() {
-    if (!state.visibleEntries.length) return;
-    if (state.settings.random && state.visibleEntries.length > 1) {
-      let next = state.currentIndex;
-      while (next === state.currentIndex) next = Math.floor(Math.random() * state.visibleEntries.length);
-      state.currentIndex = next;
-    } else {
-      state.currentIndex = (state.currentIndex + 1) % state.visibleEntries.length;
+    if (!state.visibleEntries.length) return false;
+    if (!state.settings.loopPlayback && playbackSeenEntryIds.size >= state.visibleEntries.length) {
+      finishPlaybackList();
+      return false;
     }
-    saveState();
-    render();
+    if (state.settings.random && state.visibleEntries.length > 1) {
+      const candidates = state.visibleEntries
+        .map((entry, index) => ({ entry, index }))
+        .filter((item) => state.settings.loopPlayback || !playbackSeenEntryIds.has(item.entry.id));
+      if (!candidates.length) {
+        finishPlaybackList();
+        return false;
+      }
+      const next = candidates[Math.floor(Math.random() * candidates.length)].index;
+      setCurrentIndex(next, "playback-random-next", true);
+    } else {
+      if (!hasNextEntry()) {
+        if (!state.settings.loopPlayback) {
+          finishPlaybackList();
+          return false;
+        }
+        setCurrentIndex(0, "playback-loop", true);
+      } else {
+        setCurrentIndex(state.currentIndex + 1, "playback-next", true);
+      }
+    }
+    return true;
+  }
+
+  function finishPlaybackList() {
+    state.isPlaying = false;
+    releaseWakeLock();
+    showStatus("已播放完当前列表");
+    renderPlayer();
+  }
+
+  async function testEnglishVoice() {
+    try {
+      await speakTextWithTimeout("test pronunciation", "en-US", { voiceWaitMs: 300 });
+      showToast("英文测试发音完成");
+    } catch (error) {
+      logError("testEnglishVoice", error);
+      showStatus(`英文发音测试失败：${error.message || error}`);
+    }
+  }
+
+  async function testChineseVoice() {
+    try {
+      await speakTextWithTimeout("测试中文发音", "zh-CN", { voiceWaitMs: 300 });
+      showToast("中文测试发音完成");
+    } catch (error) {
+      logError("testChineseVoice", error);
+      showStatus(`中文发音测试失败：${error.message || error}`);
+    }
   }
 
   // actions
@@ -960,9 +1295,7 @@
     if (!entry) return;
     markHidden(entry.id);
     rebuildVisibleEntries();
-    if (state.currentIndex >= state.visibleEntries.length) state.currentIndex = Math.max(0, state.visibleEntries.length - 1);
-    saveState();
-    render();
+    setCurrentIndex(state.currentIndex, "hide-current", true);
     showToast(`已移除：${entry.term}`);
   }
 
@@ -970,8 +1303,7 @@
     state.listMode = "hidden";
     const range = $("rangeFilter");
     if (range) range.value = "hidden";
-    state.currentIndex = 0;
-    render();
+    setCurrentIndex(0, "show-hidden", true);
     openDrawer("libraryDrawer");
   }
 
@@ -1008,7 +1340,7 @@
       meaning: cleanDisplayText($("editMeaning")?.value || ""),
       morph: cleanDisplayText($("editMorph")?.value || ""),
       example: cleanDisplayText($("editExample")?.value || ""),
-      type: ["word", "phrase", "sentence"].includes(typeValue) ? typeValue : inferEntryType(term)
+      type: ENTRY_TYPES.includes(typeValue) ? typeValue : inferEntryType(term)
     });
     const dialog = $("editDialog");
     if (dialog?.open) dialog.close();
@@ -1037,8 +1369,7 @@
     }
     if (!confirm(`确定恢复当前词库的 ${count} 个已移除条目？`)) return;
     state.hiddenEntryIds[state.currentLibraryId] = [];
-    saveState();
-    render();
+    setCurrentIndex(state.currentIndex, "restore-all-hidden", true);
     showToast("已恢复全部已移除条目");
   }
 
@@ -1130,7 +1461,7 @@
       base.meaning = cleanDisplayText(csvCells[1]);
       base.morph = cleanDisplayText(csvCells[2] || "");
       base.example = cleanDisplayText(csvCells[3] || "");
-      base.type = ["word", "phrase", "sentence"].includes(csvCells[4]) ? csvCells[4] : inferEntryType(base.term);
+      base.type = ENTRY_TYPES.includes(csvCells[4]) ? csvCells[4] : inferEntryType(base.term);
       return validateParsedEntry(base);
     }
 
@@ -1228,7 +1559,7 @@
         <td><textarea data-import-index="${index}" data-field="example">${escapeHtml(entry.example || "")}</textarea></td>
         <td>
           <select data-import-index="${index}" data-field="type">
-            ${["word", "phrase", "sentence"].map((type) => `<option value="${type}" ${entry.type === type ? "selected" : ""}>${TYPE_LABEL[type]}</option>`).join("")}
+            ${ENTRY_TYPES.map((type) => `<option value="${type}" ${entry.type === type ? "selected" : ""}>${TYPE_LABEL[type]}</option>`).join("")}
           </select>
         </td>
         <td class="status-cell">${escapeHtml(importStatusText(entry))}</td>
@@ -1281,7 +1612,7 @@
         meaning: cleanDisplayText(entry.meaning),
         morph: cleanDisplayText(entry.morph || ""),
         example: cleanDisplayText(entry.example || ""),
-        type: ["word", "phrase", "sentence"].includes(entry.type) ? entry.type : inferEntryType(entry.term)
+        type: ENTRY_TYPES.includes(entry.type) ? entry.type : inferEntryType(entry.term)
       }))
       .filter((entry) => entry.term);
     if (!entries.length) {
@@ -1358,6 +1689,7 @@
         difficultEntryIds: state.difficultEntryIds,
         userOverrides: state.userOverrides,
         userLibraries: state.userLibraries,
+        progressByLibrary: state.progressByLibrary,
         stats: {
           currentLibraryName: state.currentLibrary?.name || "",
           visibleCount: state.visibleEntries.length,
@@ -1404,9 +1736,18 @@
       state.learnedEntryIds = mergeListMaps(state.learnedEntryIds, payload.learnedEntryIds);
       state.difficultEntryIds = mergeListMaps(state.difficultEntryIds, payload.difficultEntryIds);
       state.userOverrides = mergeObjectMaps(state.userOverrides, payload.userOverrides);
+      state.progressByLibrary = mergeObjectMaps(state.progressByLibrary, payload.progressByLibrary);
       mergeUserLibraries(payload.userLibraries);
       state.currentLibraryId = payload.currentLibraryId || state.currentLibraryId;
       state.currentIndex = Number(payload.currentIndex) || 0;
+      if (state.currentLibraryId && !state.progressByLibrary[state.currentLibraryId]) {
+        state.progressByLibrary[state.currentLibraryId] = {
+          currentIndex: state.currentIndex,
+          currentEntryId: "",
+          updatedAt: Date.now(),
+          reason: "import-backup-legacy-index"
+        };
+      }
       saveState();
       await initLibraries();
       const target = state.libraries.some((lib) => lib.id === state.currentLibraryId)
@@ -1463,7 +1804,7 @@
     state.hiddenEntryIds = {};
     state.learnedEntryIds = {};
     state.difficultEntryIds = {};
-    state.currentIndex = 0;
+    setCurrentIndex(0, "reset-progress", false);
     saveState();
     render();
     showToast("学习进度已重置");
@@ -1485,6 +1826,7 @@
       state.difficultEntryIds = {};
       state.userOverrides = {};
       state.userLibraries = [];
+      state.progressByLibrary = {};
       state.pendingImportEntries = [];
       state.pendingImportFileName = "";
       state.settings = { ...DEFAULT_SETTINGS };
@@ -1581,6 +1923,40 @@
     }
   }
 
+  async function checkCoreAssets() {
+    const assets = [
+      "./data/builtin-index.json",
+      "./data/0529.json",
+      "./data/0530.json",
+      "./data/0601.json",
+      "./data/0602.json",
+      "./data/0603.json",
+      "./icons/icon-192.svg",
+      "./icons/icon-512.svg"
+    ];
+    if (location.protocol === "file:") {
+      setPwaStatus("file:// 下无法完整检查 PWA 资源；请用本地服务器或 GitHub Pages 测试。", false);
+      return;
+    }
+    const failures = [];
+    await Promise.all(assets.map(async (path) => {
+      try {
+        const response = await fetch(withCacheVersion(path), { cache: "no-store" });
+        if (!response.ok) failures.push(`${path} HTTP ${response.status}`);
+      } catch (error) {
+        failures.push(`${path} ${error.message || error}`);
+      }
+    }));
+    if (failures.length) {
+      const message = `核心资源缺失或不可访问：${failures.join("；")}`;
+      logError("checkCoreAssets", new Error(message));
+      showStatus(message);
+      setPwaStatus("PWA 核心资源检查失败，请确认 data/ 和 icons/ 已上传。", false);
+    } else {
+      setPwaStatus("核心资源路径正常，离线缓存可用性取决于浏览器 Service Worker 支持。", true);
+    }
+  }
+
   function isDifficult(entryId) {
     return (state.difficultEntryIds[state.currentLibraryId] || []).includes(entryId);
   }
@@ -1600,8 +1976,7 @@
         state.listMode = button.dataset.listTab === "removed" ? "hidden" : "current";
         const range = $("rangeFilter");
         if (range) range.value = state.listMode === "hidden" ? "hidden" : "active";
-        state.currentIndex = 0;
-        render();
+        setCurrentIndex(0, "switch-list-tab", true);
       });
     });
 
@@ -1609,24 +1984,22 @@
     on("librarySelect", "change", (event) => loadLibrary(event.target.value));
     on("searchInput", "input", (event) => {
       state.searchKeyword = event.target.value || "";
-      state.currentIndex = 0;
-      saveState();
-      render();
+      setCurrentIndex(0, "search", true);
     });
     on("typeFilter", "change", (event) => {
       state.filterType = event.target.value || "all";
-      state.currentIndex = 0;
-      saveState();
-      render();
+      setCurrentIndex(0, "type-filter", true);
     });
     on("rangeFilter", "change", (event) => {
       state.listMode = event.target.value === "hidden" ? "hidden" : "current";
-      state.currentIndex = 0;
-      saveState();
-      render();
+      setCurrentIndex(0, "range-filter", true);
     });
     on("autoPlayToggle", "change", (event) => {
       state.settings.autoPlay = Boolean(event.target.checked);
+      saveState();
+    });
+    on("loopPlaybackToggle", "change", (event) => {
+      state.settings.loopPlayback = Boolean(event.target.checked);
       saveState();
     });
     on("randomToggle", "change", (event) => {
@@ -1685,6 +2058,8 @@
       saveState();
       render();
     });
+    on("testEnglishVoiceBtn", "click", testEnglishVoice);
+    on("testChineseVoiceBtn", "click", testChineseVoice);
 
     on("playPauseBtn", "click", () => {
       if (state.isPlaying) stopSpeaking();
@@ -1731,14 +2106,12 @@
             if (entry) openEditDialog(entry);
           }
           rebuildVisibleEntries();
-          render();
+          setCurrentIndex(state.currentIndex, `list-${actionButton.dataset.action}`, true);
           return;
         }
         const item = event.target.closest("[data-index]");
         if (item) {
-          state.currentIndex = Number(item.dataset.index) || 0;
-          saveState();
-          render();
+          setCurrentIndex(Number(item.dataset.index) || 0, "list-click", true);
         }
       });
     }
@@ -1868,6 +2241,7 @@
     if (target) await loadLibrary(target);
     render();
     registerServiceWorker();
+    checkCoreAssets();
   }
 
   document.addEventListener("DOMContentLoaded", init);

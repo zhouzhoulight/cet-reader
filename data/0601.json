@@ -7,15 +7,17 @@
   "entries": [
     {
       "id": "0601-1nv3hal",
-      "term": "reconstitude",
-      "meaning": "reconstitute",
+      "term": "reconstitute",
+      "meaning": "重新组成；重新配制；加水复原",
       "morph": "",
       "example": "常见正确词：重新组成；重新配制；加水复原。",
-      "type": "word",
+      "type": "correction",
+      "wrong": "reconstitude",
+      "note": "原资料写作 reconstitude，建议改为 reconstitute。",
       "source": "0601.docx",
       "section": "",
-      "suspectedError": false,
-      "warnings": []
+      "suspectedError": true,
+      "warnings": ["manual-correction"]
     },
     {
       "id": "0601-nus1mc",
@@ -631,32 +633,36 @@
     },
     {
       "id": "0601-1qxvpw9",
-      "term": "rest assure",
-      "meaning": "rest assured",
+      "term": "rest assured",
+      "meaning": "放心；请放心；可以确信",
       "morph": "",
       "example": "固定表达：请放心。assured 是形容词/过去分词，不能用 assure 原形。",
-      "type": "phrase",
+      "type": "correction",
+      "wrong": "rest assure",
+      "note": "原资料写作 rest assure，建议改为 rest assured。",
       "source": "0601.docx",
       "section": "",
-      "suspectedError": false,
-      "warnings": []
+      "suspectedError": true,
+      "warnings": ["manual-correction"]
     },
     {
       "id": "0601-el2uwu",
-      "term": "cracking code",
-      "meaning": "cracking the code",
+      "term": "cracking the code",
+      "meaning": "破解密码；破译规律；理解关键方法",
       "morph": "",
       "example": "更自然的固定表达：破解密码；找到规律；掌握诀窍。",
-      "type": "phrase",
+      "type": "correction",
+      "wrong": "cracking code",
+      "note": "原资料写作 cracking code，建议改为 cracking the code。",
       "source": "0601.docx",
       "section": "",
-      "suspectedError": false,
-      "warnings": []
+      "suspectedError": true,
+      "warnings": ["manual-correction"]
     },
     {
       "id": "0601-1rac4lr",
       "term": "catalogue / catalog",
-      "meaning": "catalogue / catalog",
+      "meaning": "目录；清单；登记；编目",
       "morph": "",
       "example": "catalogue 偏英式，catalog 偏美式。",
       "type": "phrase",
@@ -827,11 +833,11 @@
       "meaning": "短语表达",
       "morph": "",
       "example": "",
-      "type": "sentence",
+      "type": "summary",
       "source": "0601.docx",
       "section": "",
-      "suspectedError": false,
-      "warnings": []
+      "suspectedError": true,
+      "warnings": ["summary-entry"]
     }
   ]
 }

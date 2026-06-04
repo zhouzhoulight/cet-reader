@@ -1,5 +1,5 @@
 {
-  "version": "2026-06-03",
+  "version": "2026-06-04",
   "libraries": [
     {
       "id": "builtin-0529",
@@ -21,6 +21,20 @@
       "file": "0601.json",
       "group": "0529-0601",
       "count": 69
+    },
+    {
+      "id": "builtin-0602",
+      "name": "0602 每日词汇构词法",
+      "file": "0602.json",
+      "group": "0529-0603",
+      "count": 77
+    },
+    {
+      "id": "builtin-0603",
+      "name": "0603 每日词汇整理",
+      "file": "0603.json",
+      "group": "0529-0603",
+      "count": 33
     }
   ]
 }

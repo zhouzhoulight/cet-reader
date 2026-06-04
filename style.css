@@ -596,6 +596,26 @@ textarea {
   white-space: pre-wrap;
 }
 
+.diagnostics-box {
+  min-height: 96px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 0;
+  padding: 10px;
+  border-radius: 12px;
+  background: #f5f6f8;
+  color: #333843;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.voice-test-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
 .edit-dialog {
   width: min(560px, calc(100% - 22px));
   max-height: calc(100dvh - 24px);
@@ -658,6 +678,10 @@ textarea {
   }
 
   .filter-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .voice-test-grid {
     grid-template-columns: 1fr;
   }
 
