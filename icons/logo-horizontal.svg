@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 420 120" role="img" aria-label="CET Reader logo">
+  <g transform="translate(0 0) scale(.75)">
+  <rect x="10" y="10" width="140" height="140" rx="36" fill="#EAF5EF"/>
+  <path d="M34 72c0-10 8-18 18-18h24c13 0 24 6 32 15v52c-8-9-19-15-32-15H52c-10 0-18-8-18-18V72Z" fill="#1F7A5A"/>
+  <path d="M126 72c0-10-8-18-18-18H84c-13 0-24 6-32 15v52c8-9 19-15 32-15h24c10 0 18-8 18-18V72Z" fill="#1F7A5A"/>
+  <path d="M80 70v52" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+  <path d="M54 83h20M54 96h20" stroke="#7ABD9A" stroke-width="6" stroke-linecap="round"/>
+  <path d="M59 39v14M80 31v20M101 39v14" stroke="#1F7A5A" stroke-width="8" stroke-linecap="round"/>
+</g>
+  <text x="132" y="51" fill="#1A1A1A" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif" font-size="28" font-weight="800">四六级朗读学习器</text>
+  <text x="132" y="84" fill="#6F766F" font-family="-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif" font-size="22" letter-spacing="2">CET Reader</text>
+</svg>

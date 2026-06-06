@@ -4,6 +4,55 @@ const path = require("path");
 const root = path.resolve(__dirname, "..");
 const dataDir = path.join(root, "data");
 const allowedTypes = new Set(["word", "phrase", "sentence", "root", "correction", "summary"]);
+const requiredAssets = [
+  "icons/icon.svg",
+  "icons/icon-192.png",
+  "icons/icon-512.png",
+  "icons/apple-touch-icon.png",
+  "icons/logo-mark.svg",
+  "icons/logo-horizontal.svg",
+  "assets/onboarding/onboarding-1.svg",
+  "assets/onboarding/onboarding-2.svg",
+  "assets/onboarding/onboarding-3.svg",
+  "assets/empty/empty-learning.svg",
+  "assets/empty/empty-favorites.svg",
+  "assets/empty/empty-plan.svg",
+  "assets/empty/empty-data.svg",
+  "assets/badges/streak-7.svg",
+  "assets/badges/streak-30.svg",
+  "assets/badges/learn-100.svg",
+  "assets/badges/favorite-master.svg",
+  "assets/badges/review-pro.svg",
+  "assets/badges/persistence.svg",
+  "assets/ui/trophy.svg",
+  "assets/ui/progress-card-deco.svg",
+  "assets/ui/study-plan-deco.svg",
+  "assets/icons/home.svg",
+  "assets/icons/learn.svg",
+  "assets/icons/library.svg",
+  "assets/icons/stats.svg",
+  "assets/icons/profile.svg",
+  "assets/icons/play.svg",
+  "assets/icons/pause.svg",
+  "assets/icons/next.svg",
+  "assets/icons/prev.svg",
+  "assets/icons/repeat.svg",
+  "assets/icons/favorite.svg",
+  "assets/icons/difficult.svg",
+  "assets/icons/mastered.svg",
+  "assets/icons/remove.svg",
+  "assets/icons/settings.svg",
+  "assets/icons/search.svg",
+  "assets/icons/filter.svg",
+  "assets/icons/calendar.svg",
+  "assets/icons/import.svg",
+  "assets/icons/backup.svg",
+  "assets/icons/more.svg",
+  "assets/icons/speaker.svg",
+  "assets/icons/mic.svg",
+  "assets/icons/note.svg",
+  "assets/icons/refresh.svg"
+];
 const requiredTerms = {
   "0602.json": [
     "fate", "destiny", "bring over", "nonsense", "cover to cover", "fantasy",
@@ -17,6 +66,14 @@ const requiredTerms = {
     "monument", "segments", "rock saws", "terminal", "elevation", "stone pit",
     "Nile", "cater to", "take in", "on the verge", "decent", "initiative",
     "compatible", "self-assured", "acupuncture"
+  ],
+  "0604.json": [
+    "reckoned", "go along", "secretary", "slides", "as to", "remark",
+    "dramatic", "extend", "retailers", "rivals", "ties up", "revenue",
+    "forwarding", "frantic", "refined", "sugars", "reserve", "inclusion",
+    "prejudiced", "nominees", "policies", "mortgage", "breadwinner",
+    "inherently", "depiction", "clever", "twist", "in excess", "digestive",
+    "other than", "adverse", "symptoms"
   ]
 };
 
@@ -32,6 +89,9 @@ function fail(message) {
 const indexPath = path.join(dataDir, "builtin-index.json");
 const index = readJson(indexPath);
 const libraries = Array.isArray(index.libraries) ? index.libraries : [];
+if (!libraries.some((meta) => meta.file === "0604.json")) {
+  fail("builtin-index.json missing 0604.json");
+}
 
 for (const meta of libraries) {
   const filePath = path.join(dataDir, meta.file || "");
@@ -49,6 +109,9 @@ for (const meta of libraries) {
   }
   if (meta.count !== library.entries.length) {
     fail(`${meta.file} count mismatch: index=${meta.count} actual=${library.entries.length}`);
+  }
+  if (meta.file === "0604.json" && library.entries.length !== 32) {
+    fail(`0604.json must contain exactly 32 entries, actual=${library.entries.length}`);
   }
 
   const ids = new Set();
@@ -72,6 +135,15 @@ for (const meta of libraries) {
   }
 
   console.log(`OK ${meta.file}: ${library.entries.length} entries, suspected=${suspected}`);
+}
+
+for (const asset of requiredAssets) {
+  const filePath = path.join(root, asset);
+  if (!fs.existsSync(filePath)) {
+    fail(`asset missing: ${asset}`);
+  } else if (fs.statSync(filePath).size <= 0) {
+    fail(`asset empty: ${asset}`);
+  }
 }
 
 if (!process.exitCode) {

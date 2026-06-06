@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="连续 30 天">
+  <rect x="12" y="12" width="136" height="136" rx="42" fill="#EAF5EF"/>
+  <circle cx="80" cy="70" r="38" fill="#fff" stroke="#7ABD9A" stroke-width="6"/>
+  <text x="80" y="82" text-anchor="middle" fill="#1F7A5A" font-family="-apple-system,BlinkMacSystemFont,'SF Pro Text',sans-serif" font-size="34" font-weight="900">30</text>
+  <path d="M52 116h56" stroke="#1F7A5A" stroke-width="7" stroke-linecap="round"/>
+  <text x="80" y="137" text-anchor="middle" fill="#55605A" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif" font-size="14">连续 30 天</text>
+</svg>

@@ -3,7 +3,7 @@
   "use strict";
 
   // constants
-  const APP_VERSION = "pwa-2026-06-04-2";
+  const APP_VERSION = "pwa-2026-06-06-redesign-assets-1";
   const STORAGE_KEY = "cet-reader-basic-state-v1";
   const CACHE_PREFIX = "cet-reader-cache";
   const TYPE_LABEL = { word: "单词", phrase: "词组", sentence: "句子", root: "词根", correction: "纠错", summary: "总结" };
@@ -23,7 +23,8 @@
     chineseVoiceURI: "",
     random: false,
     loopPlayback: false,
-    recallMode: false
+    recallMode: false,
+    audioMode: "auto"
   };
 
   // state
@@ -41,6 +42,9 @@
     hiddenEntryIds: {},
     learnedEntryIds: {},
     difficultEntryIds: {},
+    favoriteEntryIds: {},
+    dailyStudyIds: {},
+    playCountByEntry: {},
     userOverrides: {},
     userLibraries: [],
     progressByLibrary: {},
@@ -51,6 +55,8 @@
     lastSpeechError: "",
     lastSpeechTimeout: "",
     settings: { ...DEFAULT_SETTINGS },
+    currentView: "launch",
+    lastAudioSource: "检测中",
     listMode: "current",
     errors: []
   };
@@ -58,9 +64,10 @@
   let wakeLock = null;
   let voicesReady = null;
   let wakeLockNoticeShown = false;
+  let currentAudio = null;
   let playbackSeenEntryIds = new Set();
 
-  window.cetReaderState = state;
+  exposeDebugState();
 
   // DOM helpers
   const $ = (id) => document.getElementById(id);
@@ -72,6 +79,11 @@
   function text(id, value) {
     const el = $(id);
     if (el) el.textContent = value == null ? "" : String(value);
+  }
+
+  function setImage(id, src) {
+    const el = $(id);
+    if (el) el.setAttribute("src", src);
   }
 
   function html(id, value) {
@@ -132,6 +144,37 @@
   }
 
   // storage
+  function exposeDebugState() {
+    try {
+      Object.defineProperty(window, "cetReaderState", {
+        value: state,
+        writable: true,
+        configurable: true
+      });
+      Object.defineProperty(globalThis, "cetReaderState", {
+        value: state,
+        writable: true,
+        configurable: true
+      });
+      Object.defineProperty(self, "cetReaderState", {
+        value: state,
+        writable: true,
+        configurable: true
+      });
+      if (window.top && window.top !== window) {
+        Object.defineProperty(window.top, "cetReaderState", {
+          value: state,
+          writable: true,
+          configurable: true
+        });
+      }
+    } catch (error) {
+      window.cetReaderState = state;
+      globalThis.cetReaderState = state;
+      self.cetReaderState = state;
+    }
+  }
+
   function loadState() {
     try {
       const raw = localStorage.getItem(STORAGE_KEY);
@@ -145,6 +188,9 @@
       state.hiddenEntryIds = validMap(saved.hiddenEntryIds);
       state.learnedEntryIds = validMap(saved.learnedEntryIds);
       state.difficultEntryIds = validMap(saved.difficultEntryIds);
+      state.favoriteEntryIds = validMap(saved.favoriteEntryIds);
+      state.dailyStudyIds = validMap(saved.dailyStudyIds);
+      state.playCountByEntry = validMap(saved.playCountByEntry);
       state.userOverrides = validMap(saved.userOverrides);
       state.userLibraries = normalizeSavedUserLibraries(saved.userLibraries);
       state.progressByLibrary = validMap(saved.progressByLibrary);
@@ -157,6 +203,7 @@
         };
       }
       state.settings = { ...DEFAULT_SETTINGS, ...(saved.settings || {}) };
+      state.currentView = saved.currentView || "launch";
     } catch (error) {
       logError("loadState", error, "localStorage 数据损坏，已回退默认状态");
       showStatus("本地状态损坏，已自动重置本次运行状态");
@@ -174,10 +221,14 @@
         hiddenEntryIds: state.hiddenEntryIds,
         learnedEntryIds: state.learnedEntryIds,
         difficultEntryIds: state.difficultEntryIds,
+        favoriteEntryIds: state.favoriteEntryIds,
+        dailyStudyIds: state.dailyStudyIds,
+        playCountByEntry: state.playCountByEntry,
         userOverrides: state.userOverrides,
         userLibraries: state.userLibraries,
         progressByLibrary: state.progressByLibrary,
-        settings: state.settings
+        settings: state.settings,
+        currentView: state.currentView
       }));
     } catch (error) {
       logError("saveState", error, "localStorage 写入失败");
@@ -228,7 +279,7 @@
 
   function markHidden(entryId) {
     addToList(state.hiddenEntryIds, entryId);
-    addToList(state.learnedEntryIds, entryId);
+    markLearned(entryId);
     saveState();
   }
 
@@ -242,11 +293,49 @@
     saveState();
   }
 
+  function markLearned(entryId) {
+    addToList(state.learnedEntryIds, entryId);
+    const today = todayKey();
+    if (!Array.isArray(state.dailyStudyIds[today])) state.dailyStudyIds[today] = [];
+    if (!state.dailyStudyIds[today].includes(entryId)) state.dailyStudyIds[today].push(entryId);
+    saveState();
+  }
+
+  function todayKey() {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function incrementPlayCount(entryId) {
+    if (!entryId) return;
+    const key = `${state.currentLibraryId}:${entryId}`;
+    state.playCountByEntry[key] = (Number(state.playCountByEntry[key]) || 0) + 1;
+    saveState();
+  }
+
+  function getPlayCount(entryId) {
+    return Number(state.playCountByEntry[`${state.currentLibraryId}:${entryId}`]) || 0;
+  }
+
   function toggleDifficult(entryId) {
     const list = listFor(state.difficultEntryIds);
     if (list.includes(entryId)) removeFromList(state.difficultEntryIds, entryId);
     else markDifficult(entryId);
     saveState();
+  }
+
+  function toggleFavorite(entryId) {
+    const list = listFor(state.favoriteEntryIds);
+    if (list.includes(entryId)) removeFromList(state.favoriteEntryIds, entryId);
+    else addToList(state.favoriteEntryIds, entryId);
+    saveState();
+  }
+
+  function isFavorite(entryId) {
+    return (state.favoriteEntryIds[state.currentLibraryId] || []).includes(entryId);
   }
 
   function saveOverride(entryId, patch) {
@@ -412,8 +501,10 @@
       wrong: cleanDisplayText(raw.wrong || ""),
       note: cleanDisplayText(raw.note || ""),
       source: raw.source || library?.source || "",
+      section: cleanDisplayText(raw.section || ""),
       warnings: Array.isArray(raw.warnings) ? raw.warnings : [],
-      suspectedError: Boolean(raw.suspectedError)
+      suspectedError: Boolean(raw.suspectedError),
+      audio: raw.audio && typeof raw.audio === "object" && !Array.isArray(raw.audio) ? raw.audio : {}
     };
     validateEntry(entry);
     classifyEntry(entry);
@@ -524,6 +615,7 @@
     const keyword = state.searchKeyword.trim().toLowerCase();
     const hidden = new Set(state.hiddenEntryIds[state.currentLibraryId] || []);
     const difficult = new Set(state.difficultEntryIds[state.currentLibraryId] || []);
+    const favorite = new Set(state.favoriteEntryIds[state.currentLibraryId] || []);
     const learned = new Set(state.learnedEntryIds[state.currentLibraryId] || []);
     const range = $("rangeFilter")?.value || (state.listMode === "hidden" ? "hidden" : "active");
     let entries = (state.currentLibrary?.entries || []).map(applyOverride);
@@ -533,6 +625,8 @@
     }
     if (range === "difficult") {
       entries = entries.filter((entry) => !hidden.has(entry.id) && difficult.has(entry.id));
+    } else if (range === "favorite") {
+      entries = entries.filter((entry) => !hidden.has(entry.id) && favorite.has(entry.id));
     } else if (range === "unlearned") {
       entries = entries.filter((entry) => !hidden.has(entry.id) && !learned.has(entry.id));
     } else if (range === "hidden") {
@@ -626,10 +720,14 @@
     renderCard();
     renderActionStates();
     renderStats();
+    renderHomeStats();
+    renderLibraryCards();
     renderList();
     renderPlayer();
     renderErrorLog();
     updateSpeechDiagnosticsUI();
+    renderBrowserCompat();
+    renderAppMeta();
   }
 
   function syncControls() {
@@ -653,6 +751,8 @@
     if (autoPlay) autoPlay.checked = Boolean(state.settings.autoPlay);
     const loopPlayback = $("loopPlaybackToggle");
     if (loopPlayback) loopPlayback.checked = Boolean(state.settings.loopPlayback);
+    const audioSource = $("audioSourceSelect");
+    if (audioSource) audioSource.value = state.settings.audioMode || "auto";
     const repeat = $("repeatInput");
     if (repeat) repeat.value = state.settings.repeatEnglish;
     const rate = $("rateInput");
@@ -722,10 +822,13 @@
       text("entryType", "条目");
       text("entryIndex", "0 / 0");
       text("speechPreview", "");
+      text("phoneticText", "美音优先");
+      updateFavoriteButton(null);
       return;
     }
 
     text("termText", entry.term);
+    text("phoneticText", `${entry.section || "当前条目"} · 已播放 ${getPlayCount(entry.id)} 次`);
     text("meaningText", state.settings.recallMode ? "（背诵模式：点击显示答案）" : entry.meaning);
     const detailText = entry.type === "correction"
       ? [entry.wrong ? `错误写法：${entry.wrong}` : "", entry.note, entry.morph].filter(Boolean).join("\n")
@@ -736,6 +839,7 @@
     text("exampleText", state.settings.recallMode ? "" : entry.example);
     text("entryType", TYPE_LABEL[entry.type] || entry.type);
     text("entryIndex", `${state.currentIndex + 1} / ${state.visibleEntries.length}`);
+    updateFavoriteButton(entry);
 
     const answerBox = $("answerBox");
     if (answerBox) answerBox.hidden = false;
@@ -751,7 +855,11 @@
 
   function renderActionStates() {
     const hasEntry = Boolean(getCurrentEntry());
-    ["playPauseBtn", "replayBtn", "removeCurrentBtn", "difficultCurrentBtn", "editCurrentBtn", "nextCardBtn"].forEach((id) => {
+    [
+      "playPauseBtn", "replayBtn", "removeCurrentBtn", "difficultCurrentBtn", "editCurrentBtn", "nextCardBtn",
+      "knownCurrentBtn", "unknownCurrentBtn", "favoriteBtn", "speakTermBtn", "speakMeaningBtn", "speakExampleBtn",
+      "termAudioBtn", "meaningAudioBtn", "readEvalBtn", "startEvalBtn"
+    ].forEach((id) => {
       const el = $(id);
       if (el) el.disabled = !hasEntry;
     });
@@ -761,20 +869,77 @@
     });
   }
 
+  function updateFavoriteButton(entry) {
+    const button = $("favoriteBtn");
+    if (!button) return;
+    const active = Boolean(entry && isFavorite(entry.id));
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-label", active ? "取消收藏" : "收藏");
+  }
+
   function renderStats() {
     const hiddenCount = (state.hiddenEntryIds[state.currentLibraryId] || []).length;
     const difficultCount = (state.difficultEntryIds[state.currentLibraryId] || []).length;
     const learnedCount = (state.learnedEntryIds[state.currentLibraryId] || []).length;
+    const favoriteCount = (state.favoriteEntryIds[state.currentLibraryId] || []).length;
     text("visibleCount", state.visibleEntries.length);
     text("hiddenCount", hiddenCount);
     text("difficultCount", difficultCount);
     text("learnedCount", learnedCount);
+    text("favoriteCount", favoriteCount);
     renderHiddenCount();
     const fill = $("progressFill");
     if (fill) {
       const pct = state.visibleEntries.length ? ((state.currentIndex + 1) / state.visibleEntries.length) * 100 : 0;
       fill.style.width = `${pct}%`;
     }
+  }
+
+  function renderHomeStats() {
+    const today = todayKey();
+    const todayCount = (state.dailyStudyIds[today] || []).length;
+    const target = Math.max(10, Math.min(60, state.currentLibrary?.entries?.length || 32));
+    const pct = target ? Math.min(100, Math.round((todayCount / target) * 100)) : 0;
+    const learnedTotal = Object.values(state.learnedEntryIds)
+      .reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
+    const difficultTotal = Object.values(state.difficultEntryIds)
+      .reduce((sum, list) => sum + (Array.isArray(list) ? list.length : 0), 0);
+    const correctBase = learnedTotal + difficultTotal;
+    const accuracy = correctBase ? Math.round((learnedTotal / correctBase) * 100) : 0;
+    const minutes = Math.max(0, Math.round(Object.values(state.playCountByEntry).reduce((sum, count) => sum + Number(count || 0), 0) * 0.35));
+
+    text("todayLearnedText", todayCount);
+    text("todayTargetText", target);
+    text("todayPercentText", `${pct}%`);
+    text("todayMinutesText", `${minutes} 分钟`);
+    text("totalLearnedText", learnedTotal);
+    text("accuracyText", `${accuracy}%`);
+    text("totalMinutesText", minutes >= 60 ? `${Math.round(minutes / 60)}h` : `${minutes}m`);
+    text("streakCountText", todayCount > 0 ? "1" : "0");
+
+    const ring = $("todayProgressRing");
+    if (ring) {
+      const circumference = 2 * Math.PI * 48;
+      ring.style.strokeDasharray = String(circumference);
+      ring.style.strokeDashoffset = String(circumference * (1 - pct / 100));
+    }
+  }
+
+  function renderLibraryCards() {
+    const wrap = $("libraryCards");
+    if (!wrap) return;
+    wrap.innerHTML = state.libraries.map((lib) => {
+      const active = lib.id === state.currentLibraryId;
+      return `
+        <button class="library-mini-card ${active ? "active" : ""}" type="button" data-library-card="${escapeHtml(lib.id)}">
+          <span>
+            <strong>${escapeHtml(lib.name)}</strong>
+            <span>${escapeHtml(lib.group || "用户词库")} · ${Number(lib.count) || 0} 条</span>
+          </span>
+          <b>${active ? "当前" : "打开"}</b>
+        </button>
+      `;
+    }).join("");
   }
 
   function renderHiddenCount() {
@@ -787,6 +952,27 @@
     const list = $("entryList");
     if (!list) return;
     const entries = state.visibleEntries.slice(0, 120);
+    if (!entries.length) {
+      const range = $("rangeFilter")?.value || "active";
+      const asset = range === "favorite"
+        ? "./assets/empty/empty-favorites.svg"
+        : range === "hidden"
+          ? "./assets/empty/empty-data.svg"
+          : "./assets/empty/empty-learning.svg";
+      const title = range === "favorite"
+        ? "暂无收藏"
+        : range === "hidden"
+          ? "暂无已移出词条"
+          : "暂无可学习内容";
+      list.innerHTML = `
+        <div class="empty-state">
+          <img src="${asset}" alt="">
+          <strong>${title}</strong>
+          <p>可以切换词库、调整筛选，或导入自己的学习资料。</p>
+        </div>
+      `;
+      return;
+    }
     list.innerHTML = entries.map((entry, index) => `
       <div class="entry-item ${index === state.currentIndex ? "active" : ""} ${entry.suspectedError ? "suspected" : ""}" data-index="${index}">
         <div>
@@ -795,6 +981,7 @@
         </div>
         <div class="mini-actions">
           <button type="button" data-action="edit" data-id="${escapeHtml(entry.id)}" title="编辑">编辑</button>
+          <button type="button" data-action="favorite" data-id="${escapeHtml(entry.id)}" title="收藏">${isFavorite(entry.id) ? "已藏" : "收藏"}</button>
           ${state.listMode === "hidden" || ($("rangeFilter")?.value === "hidden")
             ? `<button type="button" data-action="restore" data-id="${escapeHtml(entry.id)}" title="恢复">恢复</button>`
             : `<button type="button" data-action="hide" data-id="${escapeHtml(entry.id)}" title="移除">移除</button>`}
@@ -804,7 +991,8 @@
   }
 
   function renderPlayer() {
-    text("playPauseBtn", state.isPlaying ? "停止" : "播放");
+    text("playPauseText", state.isPlaying ? "停止" : "播放");
+    setImage("playPauseIcon", state.isPlaying ? "./assets/icons/pause.svg" : "./assets/icons/play.svg");
     text("playerStatus", state.isPlaying ? "正在播放" : "空闲");
     if ("mediaSession" in navigator) {
       try {
@@ -875,7 +1063,7 @@
     const repeats = Math.max(1, Math.min(5, Number(state.settings.repeatEnglish) || 1));
     const term = sanitizeForSpeech(entry.term, "en-US", "term");
     for (let i = 0; i < repeats; i++) {
-      if (term) plan.push({ kind: "term", lang: "en-US", text: term });
+      if (term) plan.push({ kind: "term", lang: "en-US", text: term, audioSrc: entry.audio?.en || "" });
     }
     if (state.settings.spellWords && entry.type === "word") {
       const spelling = spellingForSpeech(entry.term);
@@ -883,14 +1071,19 @@
     }
     if (state.settings.speakChinese && entry.meaning) {
       const meaning = sanitizeForSpeech(entry.meaning, "zh-CN", "meaning");
-      if (meaning) plan.push({ kind: "meaning", lang: "zh-CN", text: meaning });
+      if (meaning) plan.push({ kind: "meaning", lang: "zh-CN", text: meaning, audioSrc: entry.audio?.zh || "" });
     }
     if (state.settings.speakMorph && entry.morph) {
       const morph = sanitizeForSpeech(entry.morph, "zh-CN", "morph");
       if (morph) plan.push({ kind: "morph", lang: "zh-CN", text: morph });
     }
     if (state.settings.speakExample && entry.example) {
-      plan.push(...mixedSpeechItems(entry.example, "example"));
+      if (entry.audio?.example) {
+        const example = sanitizeForSpeech(entry.example, "en-US", "example");
+        if (example) plan.push({ kind: "example", lang: "en-US", text: example, audioSrc: entry.audio.example });
+      } else {
+        plan.push(...mixedSpeechItems(entry.example, "example"));
+      }
     }
     return plan;
   }
@@ -921,6 +1114,66 @@
 
   function isSpeechSupported() {
     return "speechSynthesis" in window && "SpeechSynthesisUtterance" in window;
+  }
+
+  function setPronunciationSource(label) {
+    state.lastAudioSource = label;
+    text("pronunciationSourceText", label);
+  }
+
+  async function playSpeechItem(item) {
+    if (!item?.text && !item?.audioSrc) return;
+    const mode = state.settings.audioMode || "auto";
+    if (mode === "silent") {
+      setPronunciationSource("静音模式");
+      return;
+    }
+    if (mode === "auto" && item.audioSrc) {
+      try {
+        await playAudioFile(item.audioSrc);
+        setPronunciationSource("内置音频");
+        return;
+      } catch (error) {
+        logInfo("playAudioFile.fallback", `${item.audioSrc}；${error.message || error}`);
+      }
+    }
+    if (!isSpeechSupported()) {
+      setPronunciationSource("不可用");
+      throw new Error("当前浏览器不支持朗读能力，请尝试 Safari、Chrome 或 Edge。");
+    }
+    setPronunciationSource("系统语音");
+    await speakText(item.text, item.lang);
+  }
+
+  function playAudioFile(src) {
+    const audioSrc = String(src || "").trim();
+    if (!audioSrc) return Promise.reject(new Error("音频路径为空"));
+    return new Promise((resolve, reject) => {
+      if (currentAudio) {
+        try {
+          currentAudio.pause();
+          currentAudio.src = "";
+        } catch (error) {
+          logInfo("playAudioFile.stopPrevious", error.message || String(error));
+        }
+      }
+      const audio = new Audio(audioSrc);
+      currentAudio = audio;
+      audio.preload = "auto";
+      audio.volume = Number.isFinite(Number(state.settings.volume)) ? Number(state.settings.volume) : 1;
+      let settled = false;
+      const timer = setTimeout(() => settle(reject, new Error(`内置音频加载超时：${audioSrc}`)), 12000);
+      const settle = (fn, value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (currentAudio === audio) currentAudio = null;
+        fn(value);
+      };
+      audio.onended = () => settle(resolve);
+      audio.onerror = () => settle(reject, new Error(`内置音频不可用：${audioSrc}`));
+      audio.play().catch((error) => settle(reject, error));
+    });
   }
 
   async function speakText(textValue, lang) {
@@ -1068,6 +1321,7 @@
       voicesCount: state.availableVoices.length,
       englishVoice: enVoice ? `${enVoice.name} / ${enVoice.lang}` : "未找到",
       chineseVoice: zhVoice ? `${zhVoice.name} / ${zhVoice.lang}` : "未找到",
+      source: state.lastAudioSource || sourceLabelForMode(),
       lastError: state.lastSpeechError || "无",
       lastTimeout: state.lastSpeechTimeout || "无"
     };
@@ -1082,6 +1336,7 @@
       `可用 voices：${diag.voicesCount}`,
       `英文 voice：${diag.englishVoice}`,
       `中文 voice：${diag.chineseVoice}`,
+      `当前发音来源：${diag.source}`,
       `最近错误：${diag.lastError}`,
       `最近超时：${diag.lastTimeout}`,
       "无声音建议：换 Safari / Chrome / Edge；检查系统 TTS 语音包；iOS PWA 锁屏后台可能受限制；微信/QQ/百度内置浏览器不保证稳定。"
@@ -1168,10 +1423,11 @@
       text("speechPreview", plan.map((item) => `${item.kind} [${item.lang}]: ${item.text}`).join("\n"));
       for (const item of plan) {
         if (token !== state.playerToken) return;
-        await speakText(item.text, item.lang);
+        await playSpeechItem(item);
       }
       if (token !== state.playerToken) return;
-      addToList(state.learnedEntryIds, entry.id);
+      markLearned(entry.id);
+      incrementPlayCount(entry.id);
       playbackSeenEntryIds.add(entry.id);
       saveState();
       if (state.isPlaying && state.settings.autoPlay) {
@@ -1194,6 +1450,15 @@
   function stopSpeaking(render = true) {
     state.playerToken += 1;
     state.isPlaying = false;
+    if (currentAudio) {
+      try {
+        currentAudio.pause();
+        currentAudio.src = "";
+      } catch (error) {
+        logInfo("stopSpeaking.audio", error.message || String(error));
+      }
+      currentAudio = null;
+    }
     if ("speechSynthesis" in window) window.speechSynthesis.cancel();
     releaseWakeLock();
     if ("mediaSession" in navigator) {
@@ -1290,13 +1555,36 @@
   }
 
   // actions
-  function hideCurrentEntry() {
+  async function hideCurrentEntry() {
     const entry = currentEntry();
     if (!entry) return;
+    const indexBeforeRemove = state.currentIndex;
+    stopSpeaking(false);
+    const confirmed = await confirmRemoveCurrentEntry();
+    if (!confirmed) {
+      renderPlayer();
+      return;
+    }
     markHidden(entry.id);
     rebuildVisibleEntries();
-    setCurrentIndex(state.currentIndex, "hide-current", true);
-    showToast(`已移除：${entry.term}`);
+    setCurrentIndex(indexBeforeRemove, "hide-current", true);
+    showToast("已移出当前词，可在已移除列表中恢复。");
+  }
+
+  function confirmRemoveCurrentEntry() {
+    const dialog = $("confirmRemoveDialog");
+    if (!dialog?.showModal) {
+      return Promise.resolve(confirm("移出当前单词？\n\n移出后将从复习列表中移除，但不会跳过下一个单词。"));
+    }
+    return new Promise((resolve) => {
+      const onClose = () => {
+        dialog.removeEventListener("close", onClose);
+        resolve(dialog.returnValue === "confirm");
+      };
+      dialog.addEventListener("close", onClose);
+      dialog.returnValue = "cancel";
+      dialog.showModal();
+    });
   }
 
   function showHiddenEntries() {
@@ -1305,6 +1593,81 @@
     if (range) range.value = "hidden";
     setCurrentIndex(0, "show-hidden", true);
     openDrawer("libraryDrawer");
+  }
+
+  function markCurrentKnown() {
+    const entry = currentEntry();
+    if (!entry) return;
+    stopSpeaking(false);
+    markLearned(entry.id);
+    moveToNextAfterFeedback("known");
+    showToast("已记录为认识");
+  }
+
+  function markCurrentUnknown() {
+    const entry = currentEntry();
+    if (!entry) return;
+    stopSpeaking(false);
+    markDifficult(entry.id);
+    moveToNextAfterFeedback("unknown");
+    showToast("已加入错词 / 不熟");
+  }
+
+  function moveToNextAfterFeedback(reason) {
+    if (!state.visibleEntries.length) {
+      render();
+      return;
+    }
+    const nextIndex = Math.min(state.currentIndex + 1, state.visibleEntries.length - 1);
+    setCurrentIndex(nextIndex, reason, true);
+  }
+
+  function toggleCurrentFavorite() {
+    const entry = currentEntry();
+    if (!entry) return;
+    toggleFavorite(entry.id);
+    render();
+    showToast(isFavorite(entry.id) ? "已收藏" : "已取消收藏");
+  }
+
+  async function playSinglePart(part) {
+    const entry = currentEntry();
+    if (!entry) return;
+    stopSpeaking(false);
+    const token = ++state.playerToken;
+    state.isPlaying = true;
+    renderPlayer();
+    try {
+      let item = null;
+      if (part === "term") {
+        item = { kind: "term", lang: "en-US", text: sanitizeForSpeech(entry.term, "en-US", "term"), audioSrc: entry.audio?.en || "" };
+      } else if (part === "meaning") {
+        item = { kind: "meaning", lang: "zh-CN", text: sanitizeForSpeech(entry.meaning, "zh-CN", "meaning"), audioSrc: entry.audio?.zh || "" };
+      } else if (part === "example") {
+        item = { kind: "example", lang: "en-US", text: sanitizeForSpeech(entry.example, "en-US", "example"), audioSrc: entry.audio?.example || "" };
+      }
+      if (!item?.text && !item?.audioSrc) {
+        state.isPlaying = false;
+        renderPlayer();
+        return;
+      }
+      await playSpeechItem(item);
+      if (token !== state.playerToken) return;
+      incrementPlayCount(entry.id);
+      state.isPlaying = false;
+      render();
+    } catch (error) {
+      if (token !== state.playerToken) return;
+      state.isPlaying = false;
+      logError(`playSinglePart.${part}`, error, entry.term);
+      showStatus(`发音失败：${error.message || error}`);
+      renderPlayer();
+    }
+  }
+
+  function showEvaluationPlaceholder() {
+    text("evalStatusText", "未开始");
+    showToast("跟读评测是后续增强功能，当前仅提供界面占位。");
   }
 
   function editCurrentEntry() {
@@ -1665,6 +2028,7 @@
     delete state.hiddenEntryIds[meta.id];
     delete state.learnedEntryIds[meta.id];
     delete state.difficultEntryIds[meta.id];
+    delete state.favoriteEntryIds[meta.id];
     delete state.userOverrides[meta.id];
     saveState();
     initLibraries().then(() => {
@@ -1687,6 +2051,9 @@
         hiddenEntryIds: state.hiddenEntryIds,
         learnedEntryIds: state.learnedEntryIds,
         difficultEntryIds: state.difficultEntryIds,
+        favoriteEntryIds: state.favoriteEntryIds,
+        dailyStudyIds: state.dailyStudyIds,
+        playCountByEntry: state.playCountByEntry,
         userOverrides: state.userOverrides,
         userLibraries: state.userLibraries,
         progressByLibrary: state.progressByLibrary,
@@ -1695,6 +2062,7 @@
           visibleCount: state.visibleEntries.length,
           learnedCount: (state.learnedEntryIds[state.currentLibraryId] || []).length,
           difficultCount: (state.difficultEntryIds[state.currentLibraryId] || []).length,
+          favoriteCount: (state.favoriteEntryIds[state.currentLibraryId] || []).length,
           hiddenCount: (state.hiddenEntryIds[state.currentLibraryId] || []).length
         }
       };
@@ -1735,6 +2103,9 @@
       state.hiddenEntryIds = mergeListMaps(state.hiddenEntryIds, payload.hiddenEntryIds);
       state.learnedEntryIds = mergeListMaps(state.learnedEntryIds, payload.learnedEntryIds);
       state.difficultEntryIds = mergeListMaps(state.difficultEntryIds, payload.difficultEntryIds);
+      state.favoriteEntryIds = mergeListMaps(state.favoriteEntryIds, payload.favoriteEntryIds);
+      state.dailyStudyIds = mergeListMaps(state.dailyStudyIds, payload.dailyStudyIds);
+      state.playCountByEntry = { ...state.playCountByEntry, ...(validMap(payload.playCountByEntry)) };
       state.userOverrides = mergeObjectMaps(state.userOverrides, payload.userOverrides);
       state.progressByLibrary = mergeObjectMaps(state.progressByLibrary, payload.progressByLibrary);
       mergeUserLibraries(payload.userLibraries);
@@ -1804,6 +2175,8 @@
     state.hiddenEntryIds = {};
     state.learnedEntryIds = {};
     state.difficultEntryIds = {};
+    state.dailyStudyIds = {};
+    state.playCountByEntry = {};
     setCurrentIndex(0, "reset-progress", false);
     saveState();
     render();
@@ -1824,6 +2197,9 @@
       state.hiddenEntryIds = {};
       state.learnedEntryIds = {};
       state.difficultEntryIds = {};
+      state.favoriteEntryIds = {};
+      state.dailyStudyIds = {};
+      state.playCountByEntry = {};
       state.userOverrides = {};
       state.userLibraries = [];
       state.progressByLibrary = {};
@@ -1882,6 +2258,7 @@
       status.classList.toggle("status-ok", ok);
       status.classList.toggle("status-warn", !ok);
     }
+    text("cacheStatusText", message);
   }
 
   async function registerServiceWorker() {
@@ -1896,7 +2273,8 @@
       return;
     }
     try {
-      await navigator.serviceWorker.register("./sw.js");
+      const registration = await navigator.serviceWorker.register("./sw.js");
+      if (registration.waiting) registration.waiting.postMessage({ type: "SKIP_WAITING" });
       setPwaStatus("离线缓存已启用", true);
       showStatus("离线缓存已启用");
     } catch (error) {
@@ -1915,6 +2293,8 @@
         const names = await caches.keys();
         await Promise.all(names.filter((name) => name.startsWith(CACHE_PREFIX)).map((name) => caches.delete(name)));
       }
+      localStorage.setItem(`${STORAGE_KEY}:last-cache-refresh`, new Date().toLocaleString());
+      renderAppMeta();
       showToast("缓存已刷新，正在重新加载");
       setTimeout(() => location.reload(), 250);
     } catch (error) {
@@ -1925,14 +2305,64 @@
 
   async function checkCoreAssets() {
     const assets = [
+      "./index.html",
+      "./style.css",
+      "./app.js",
+      "./manifest.json",
       "./data/builtin-index.json",
       "./data/0529.json",
       "./data/0530.json",
       "./data/0601.json",
       "./data/0602.json",
       "./data/0603.json",
-      "./icons/icon-192.svg",
-      "./icons/icon-512.svg"
+      "./data/0604.json",
+      "./icons/icon.svg",
+      "./icons/icon-192.png",
+      "./icons/icon-512.png",
+      "./icons/apple-touch-icon.png",
+      "./icons/logo-mark.svg",
+      "./icons/logo-horizontal.svg",
+      "./assets/onboarding/onboarding-1.svg",
+      "./assets/onboarding/onboarding-2.svg",
+      "./assets/onboarding/onboarding-3.svg",
+      "./assets/empty/empty-learning.svg",
+      "./assets/empty/empty-favorites.svg",
+      "./assets/empty/empty-plan.svg",
+      "./assets/empty/empty-data.svg",
+      "./assets/badges/streak-7.svg",
+      "./assets/badges/streak-30.svg",
+      "./assets/badges/learn-100.svg",
+      "./assets/badges/favorite-master.svg",
+      "./assets/badges/review-pro.svg",
+      "./assets/badges/persistence.svg",
+      "./assets/ui/trophy.svg",
+      "./assets/ui/progress-card-deco.svg",
+      "./assets/ui/study-plan-deco.svg",
+      "./assets/icons/home.svg",
+      "./assets/icons/learn.svg",
+      "./assets/icons/library.svg",
+      "./assets/icons/stats.svg",
+      "./assets/icons/profile.svg",
+      "./assets/icons/play.svg",
+      "./assets/icons/pause.svg",
+      "./assets/icons/next.svg",
+      "./assets/icons/prev.svg",
+      "./assets/icons/repeat.svg",
+      "./assets/icons/favorite.svg",
+      "./assets/icons/difficult.svg",
+      "./assets/icons/mastered.svg",
+      "./assets/icons/remove.svg",
+      "./assets/icons/settings.svg",
+      "./assets/icons/search.svg",
+      "./assets/icons/filter.svg",
+      "./assets/icons/calendar.svg",
+      "./assets/icons/import.svg",
+      "./assets/icons/backup.svg",
+      "./assets/icons/more.svg",
+      "./assets/icons/speaker.svg",
+      "./assets/icons/mic.svg",
+      "./assets/icons/note.svg",
+      "./assets/icons/refresh.svg"
     ];
     if (location.protocol === "file:") {
       setPwaStatus("file:// 下无法完整检查 PWA 资源；请用本地服务器或 GitHub Pages 测试。", false);
@@ -1961,8 +2391,79 @@
     return (state.difficultEntryIds[state.currentLibraryId] || []).includes(entryId);
   }
 
+  function setView(viewName, options = {}) {
+    const target = viewName || "home";
+    state.currentView = target;
+    document.body.dataset.view = target;
+    document.querySelectorAll(".view").forEach((view) => {
+      view.classList.toggle("active", view.dataset.view === target);
+    });
+    document.querySelectorAll("[data-nav-view]").forEach((button) => {
+      button.classList.toggle("active", button.dataset.navView === target || (target === "launch" && button.dataset.navView === "home"));
+    });
+    if (options.scroll !== false) window.scrollTo({ top: 0, behavior: "smooth" });
+    saveState();
+  }
+
+  function startLearning() {
+    if (!state.currentLibrary && state.libraries[0]) {
+      loadLibrary(state.libraries[0].id).then(() => setView("study"));
+      return;
+    }
+    setView("study");
+  }
+
+  function continueLearning() {
+    setView(state.currentLibrary ? "study" : "home");
+  }
+
+  function renderAppMeta() {
+    text("appVersionText", APP_VERSION);
+    text("lastCacheRefreshText", localStorage.getItem(`${STORAGE_KEY}:last-cache-refresh`) || "暂无记录");
+    text("pronunciationSourceText", state.lastAudioSource || sourceLabelForMode());
+  }
+
+  function sourceLabelForMode() {
+    if (state.settings.audioMode === "silent") return "静音模式";
+    if (state.settings.audioMode === "system") return "系统语音";
+    return "自动：内置音频优先";
+  }
+
+  function renderBrowserCompat() {
+    const result = detectBrowser();
+    const stable = ["Safari", "Chrome", "Edge", "百度浏览器"].includes(result.name);
+    const message = stable
+      ? `当前浏览器：${result.name}。核心页面可用，朗读和离线能力仍取决于系统权限。`
+      : `当前浏览器：${result.name}。可能限制朗读或离线能力，建议使用 Safari 或 Chrome 获得更稳定体验。`;
+    text("browserCompatText", message);
+  }
+
+  function detectBrowser() {
+    const ua = navigator.userAgent || "";
+    if (/MicroMessenger/i.test(ua)) return { name: "微信内置浏览器", ua };
+    if (/QQBrowser/i.test(ua) || /\bMQQBrowser\b/i.test(ua)) return { name: "QQ 内置浏览器", ua };
+    if (/Baidu|baidubrowser|BIDUBrowser/i.test(ua)) return { name: "百度浏览器", ua };
+    if (/Edg\//i.test(ua)) return { name: "Edge", ua };
+    if (/Chrome|CriOS/i.test(ua) && !/Edg\//i.test(ua)) return { name: "Chrome", ua };
+    if (/Safari/i.test(ua) && !/Chrome|CriOS|Edg\//i.test(ua)) return { name: "Safari", ua };
+    return { name: "当前浏览器", ua };
+  }
+
   // events
   function bindEvents() {
+    on("startLearningBtn", "click", startLearning);
+    on("continueLearningBtn", "click", continueLearning);
+    on("homeContinueBtn", "click", startLearning);
+    on("backHomeBtn", "click", () => setView("home"));
+    on("libraryBackBtn", "click", () => setView("study"));
+    on("daily0604Btn", "click", async () => {
+      const target = state.libraries.find((lib) => lib.id === "builtin-0604");
+      if (target) await loadLibrary(target.id);
+      setView("study");
+    });
+    document.querySelectorAll("[data-nav-view]").forEach((button) => {
+      button.addEventListener("click", () => setView(button.dataset.navView || "home"));
+    });
     on("libraryBtn", "click", () => openDrawer("libraryDrawer"));
     on("settingsBtn", "click", () => openDrawer("settingsDrawer"));
     on("drawerBackdrop", "click", closeDrawers);
@@ -1997,6 +2498,12 @@
     on("autoPlayToggle", "change", (event) => {
       state.settings.autoPlay = Boolean(event.target.checked);
       saveState();
+    });
+    on("audioSourceSelect", "change", (event) => {
+      state.settings.audioMode = event.target.value || "auto";
+      setPronunciationSource(sourceLabelForMode());
+      saveState();
+      render();
     });
     on("loopPlaybackToggle", "change", (event) => {
       state.settings.loopPlayback = Boolean(event.target.checked);
@@ -2070,6 +2577,33 @@
     on("nextCardBtn", "click", playNext);
     on("replayBtn", "click", replayCurrent);
     on("removeCurrentBtn", "click", hideCurrentEntry);
+    on("knownCurrentBtn", "click", markCurrentKnown);
+    on("unknownCurrentBtn", "click", markCurrentUnknown);
+    on("favoriteBtn", "click", toggleCurrentFavorite);
+    on("quickFavoriteBtn", "click", () => {
+      const range = $("rangeFilter");
+      if (range) range.value = "favorite";
+      state.listMode = "current";
+      setCurrentIndex(0, "quick-favorite", true);
+      setView("library");
+    });
+    on("quickDifficultBtn", "click", () => {
+      const range = $("rangeFilter");
+      if (range) range.value = "difficult";
+      state.listMode = "current";
+      setCurrentIndex(0, "quick-difficult", true);
+      setView("library");
+    });
+    on("quickRecordBtn", "click", () => setView("library"));
+    on("speakTermBtn", "click", () => playSinglePart("term"));
+    on("termAudioBtn", "click", () => playSinglePart("term"));
+    on("speakMeaningBtn", "click", () => playSinglePart("meaning"));
+    on("meaningAudioBtn", "click", () => playSinglePart("meaning"));
+    on("speakExampleBtn", "click", () => playSinglePart("example"));
+    on("readEvalBtn", "click", showEvaluationPlaceholder);
+    on("startEvalBtn", "click", showEvaluationPlaceholder);
+    on("notesBtn", "click", () => showToast("笔记功能为后续增强能力，当前可先用收藏和错词记录。"));
+    on("moreBtn", "click", () => setView("library"));
     on("difficultCurrentBtn", "click", () => {
       const entry = currentEntry();
       if (!entry) return;
@@ -2100,6 +2634,7 @@
           const entryId = actionButton.dataset.id;
           if (actionButton.dataset.action === "hide") markHidden(entryId);
           if (actionButton.dataset.action === "restore") restoreHidden(entryId);
+          if (actionButton.dataset.action === "favorite") toggleFavorite(entryId);
           if (actionButton.dataset.action === "edit") {
             const entry = state.visibleEntries.find((item) => item.id === entryId)
               || (state.currentLibrary?.entries || []).map(applyOverride).find((item) => item.id === entryId);
@@ -2136,6 +2671,16 @@
     on("copyErrorsBtn", "click", copyErrorLogs);
     on("copyErrorsBtn2", "click", copyErrorLogs);
 
+    const libraryCards = $("libraryCards");
+    if (libraryCards) {
+      libraryCards.addEventListener("click", (event) => {
+        const card = event.target.closest("[data-library-card]");
+        if (!card) return;
+        loadLibrary(card.dataset.libraryCard);
+        setView("study");
+      });
+    }
+
     const editForm = $("editForm");
     if (editForm) {
       editForm.addEventListener("submit", (event) => {
@@ -2166,6 +2711,10 @@
   }
 
   function openDrawer(id) {
+    if (id === "libraryDrawer" || id === "settingsDrawer") {
+      setView("library");
+      return;
+    }
     const drawer = $(id);
     const backdrop = $("drawerBackdrop");
     if (drawer) drawer.hidden = false;
@@ -2240,6 +2789,7 @@
       : state.libraries[0]?.id;
     if (target) await loadLibrary(target);
     render();
+    setView(state.currentView || "launch", { scroll: false });
     registerServiceWorker();
     checkCoreAssets();
   }
@@ -2247,6 +2797,7 @@
   document.addEventListener("DOMContentLoaded", init);
 
   // expose minimal API for manual testing
+  exposeDebugState();
   window.cetReader = {
     state,
     loadLibrary,
@@ -2257,8 +2808,11 @@
     sanitizeChineseForSpeech,
     morphToSpeakableText,
     buildPlayPlan,
+    playSpeechItem,
     markHidden,
     restoreHidden,
+    toggleFavorite,
+    setView,
     saveOverride,
     removeOverride,
     fetchJsonWithFallback,
@@ -2267,4 +2821,5 @@
     importBackup,
     refreshCache
   };
+  globalThis.cetReader = window.cetReader;
 })();

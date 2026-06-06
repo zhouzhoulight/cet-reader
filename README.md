@@ -1,6 +1,8 @@
-# 四六级朗读学习器
+# 四六级朗读学习器 / CET Reader
 
-一个不依赖后端的本地 PWA 四六级朗读学习器。它可以加载内置词库，也可以导入自己的 txt/csv 资料，支持朗读、拼写、中文释义、构词法开关、随机播放、背诵模式、已学/不熟/已移除管理、本地备份和恢复。
+纯前端 PWA 四六级朗读学习产品，适合手机端打开、添加到主屏幕和部署到 GitHub Pages。项目保留内置每日词库、用户 txt/csv 导入、朗读队列、拼写、中文释义、构词法、随机播放、自动连续播放、收藏、错词/不熟、已移出复习、本地备份和缓存刷新。
+
+本版本重点补齐了品牌 Logo、App Icon、功能图标、引导插画、空状态插画、成就徽章和首页装饰资源，并统一为绿色系 App 质感。
 
 ## 文件结构
 
@@ -18,107 +20,131 @@ cet-reader/
 │   ├── 0530.json
 │   ├── 0601.json
 │   ├── 0602.json
-│   └── 0603.json
-└── icons/
-    ├── icon-192.svg
-    └── icon-512.svg
+│   ├── 0603.json
+│   └── 0604.json
+├── icons/
+│   ├── icon.svg
+│   ├── icon-192.png
+│   ├── icon-512.png
+│   ├── apple-touch-icon.png
+│   ├── logo-mark.svg
+│   └── logo-horizontal.svg
+├── assets/
+│   ├── onboarding/
+│   ├── empty/
+│   ├── badges/
+│   ├── ui/
+│   └── icons/
+├── audio/
+│   ├── en/
+│   ├── zh/
+│   └── example/
+└── scripts/
+    └── validate-data.js
 ```
-
-## 内置词库
-
-- 0529 每日词汇构词法
-- 0530 每日词汇构词法
-- 0601 每日词汇整理
-- 0602 每日词汇构词法
-- 0603 每日词汇整理
 
 ## 本地运行
 
-在 `cet-reader` 目录里运行：
+在 `cet-reader` 目录运行：
 
 ```bash
 python3 -m http.server 8080
 ```
 
-然后访问 `http://localhost:8080`。不要用 `file://` 直接打开做正式测试，因为 Service Worker、缓存和部分音频权限需要 HTTP/HTTPS 环境。
+然后访问 `http://localhost:8080/`。不推荐用 `file://` 做正式测试，因为 Service Worker、PWA 安装、离线缓存和部分音频权限需要 HTTP/HTTPS 环境。
 
 ## GitHub Pages 部署
 
-1. 新建一个 GitHub 仓库。
-2. 上传 `cet-reader` 里的所有文件和文件夹。
-3. 进入仓库 `Settings` -> `Pages`。
-4. Source 选择 `Deploy from branch`。
-5. 选择主分支和根目录或对应目录。
-6. 等 Pages 生成链接后，用浏览器打开。
+上传 `cet-reader` 下所有文件和目录到仓库，然后在 `Settings` -> `Pages` 中选择主分支和对应目录。必须上传 `data/`、`icons/`、`assets/`、`audio/`、`scripts/`。不要上传或引用 `app(8).js`、`0604(2).json`、`index(5).html` 这类带括号的部署文件名。
 
-## iPhone 使用
+## 手机添加到主屏幕
 
-1. 用 Safari 打开 GitHub Pages 链接。
-2. 点分享按钮。
-3. 选择“添加到主屏幕”。
-4. 从主屏幕图标打开。
+iPhone：用 Safari 打开 GitHub Pages 链接，点分享按钮，选择“添加到主屏幕”。
 
-## Android 使用
+Android：用 Chrome 打开链接，打开菜单，选择“添加到主屏幕”或“安装应用”。
 
-1. 用 Chrome 打开链接。
-2. 打开浏览器菜单。
-3. 选择“添加到主屏幕”或“安装应用”。
-4. 从桌面图标打开。
+## 0604 词库
 
-## 内置浏览器说明
+`data/0604.json` 已加入，共 32 个词汇/短语。它已经出现在学习首页的 `06/04 核心词库` 入口、词库选择、`data/builtin-index.json`、Service Worker 缓存和 `scripts/validate-data.js` 校验中。
 
-百度、微信、QQ 等内置浏览器可以临时打开页面，但不推荐正式学习使用。PWA 安装、离线缓存和音频权限在这些浏览器里可能不稳定，优先使用 Safari 或 Chrome。
+## 视觉资源
 
-## 锁屏播放限制
+App Icon 和 Logo：
 
-当前项目已做能力范围内的自动连续播放和 Media Session 支持，但 iOS Safari/PWA 可能限制后台 JavaScript 和系统 TTS。不能保证锁屏后 100% 连续播放。最稳定的后台播放需要原生 iOS App。
+- `icons/icon.svg`
+- `icons/icon-192.png`
+- `icons/icon-512.png`
+- `icons/apple-touch-icon.png`
+- `icons/logo-mark.svg`
+- `icons/logo-horizontal.svg`
 
-## 导入词库
+引导插画：
 
-推荐导入 txt 或 csv。CSV 建议列顺序为 `term, meaning, morph, example, type`。Word 文档建议先另存为 txt/csv；docx 暂不作为这个 PWA 版本的核心能力。
+- `assets/onboarding/onboarding-1.svg`
+- `assets/onboarding/onboarding-2.svg`
+- `assets/onboarding/onboarding-3.svg`
 
-导入后会先出现预览表，可以编辑英文、中文、构词法、例句和类型。疑似错误行会标红，确认后会保存为用户词库。
+空状态插画：
 
-## 备份和恢复
+- `assets/empty/empty-learning.svg`
+- `assets/empty/empty-favorites.svg`
+- `assets/empty/empty-plan.svg`
+- `assets/empty/empty-data.svg`
 
-点“导出备份”会下载 `cet-reader-backup-YYYY-MM-DD.json`，其中包含学习进度、编辑内容、不熟/已移除状态、设置和用户导入词库。
+成就徽章：
 
-点“导入备份”选择之前导出的 JSON，会合并恢复数据。它不会导出或导入浏览器 Service Worker 缓存。
+- `assets/badges/streak-7.svg`
+- `assets/badges/streak-30.svg`
+- `assets/badges/learn-100.svg`
+- `assets/badges/favorite-master.svg`
+- `assets/badges/review-pro.svg`
+- `assets/badges/persistence.svg`
 
-学习进度按词库单独保存。重新打开页面会恢复上次词库和该词库上次所在条目；切换词库时也会保存旧词库位置，再恢复新词库自己的位置。
+功能图标位于 `assets/icons/`，包括首页、学习、词库、播放、暂停、上一条、下一条、重播、收藏、错词、移出、设置、搜索、筛选、导入、备份等。
 
-## 语音诊断
+## 音频策略
 
-设置面板里有“测试英文发音”和“测试中文发音”。诊断区域会显示：
+播放器按以下顺序工作：
 
-- 当前浏览器是否支持 `speechSynthesis`。
-- 可用系统 voices 数量。
-- 当前英文 voice 和中文 voice。
-- 最近一次朗读错误。
-- 最近一次朗读超时。
+1. 先尝试 `entry.audio.en / zh / example` 引用的本地 mp3。
+2. 内置音频缺失或加载失败时，回退浏览器 `speechSynthesis`。
+3. `speechSynthesis` 不可用时，在页面显示提示。
 
-如果没声音，优先尝试 Safari / Chrome / Edge，检查系统 TTS 语音包。微信、QQ、百度等内置浏览器的语音权限和 PWA 能力不稳定。
+设置页有三种发音来源：自动、仅系统语音、静音模式。当前版本没有伪造真人 mp3，也没有接入在线 TTS API 或 API Key。
 
-## 刷新缓存
+## 浏览器兼容
 
-如果更新了文件但手机还显示旧版本，打开“设置和数据”，点“刷新应用缓存”。它会注销旧 Service Worker、删除 `cet-reader-cache` 开头的缓存，然后重新加载页面。
+页面会检测 Safari、Chrome、Edge、百度浏览器、微信内置浏览器和 QQ 内置浏览器。微信/QQ 内置浏览器可能限制朗读、离线缓存或 PWA 安装，页面只提示，不阻止学习。Service Worker 不可用时，核心学习功能仍可打开。
 
-如果部署到 GitHub Pages，请确认 `data/` 和 `icons/` 文件夹都已上传。页面启动时会检查核心资源路径；如果缺文件，会在页面上显示错误提示。
+## 缓存刷新
 
-新增内置词库时需要同步更新：
+当前版本：
 
-- `data/xxx.json`
-- `data/builtin-index.json`
-- `sw.js` 的 `CORE_ASSETS`
-- `app.js` 的核心资源检查列表
-- `README.md`
+```text
+pwa-2026-06-06-redesign-assets-1
+```
 
-GitHub Pages 部署时不要只上传 `index.html`，必须上传 `data/` 和 `icons/` 文件夹。手机显示旧版本时，先点“刷新应用缓存”。
+对应 Service Worker 缓存：
 
-## 0530 加载失败排查
+```text
+cet-reader-cache-v2026-06-06-redesign-assets-1
+```
 
-- 检查 `data/0530.json` 是否存在。
-- 检查 `data/builtin-index.json` 是否存在并引用了 `0530.json`。
-- 用本地服务器或 GitHub Pages 打开，不要用 `file://`。
-- 点“刷新应用缓存”。
-- 必要时清理浏览器缓存后重新打开。
+如果手机仍显示旧版本，进入“词库与设置”，点击右上角刷新按钮。它会注销旧 Service Worker、删除 `cet-reader-cache` 开头的缓存并重新加载。
+
+## 数据校验
+
+运行：
+
+```bash
+node --check app.js
+node --check sw.js
+node --check scripts/validate-data.js
+node scripts/validate-data.js
+```
+
+校验脚本会检查内置词库、0604 的 32 个指定词、索引 count、entry 字段、核心图标和关键 assets 是否存在。
+
+## 仍是占位
+
+真正 AI 跟读评测仍是后续增强，只做了明确的 UI 占位。真实真人音频也需要后续把 mp3 放入 `audio/en`、`audio/zh`、`audio/example` 并在词条 `audio` 字段里引用；当前版本只提供本地音频优先和系统语音兜底架构。

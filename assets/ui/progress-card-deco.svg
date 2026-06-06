@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 140" role="img" aria-label="学习进度装饰">
+  <path d="M18 112c38-40 70-40 96 0s56 37 88 0" fill="none" stroke="#7ABD9A" stroke-width="18" stroke-linecap="round" opacity=".28"/>
+  <circle cx="174" cy="42" r="28" fill="#EAF5EF"/>
+  <path d="M66 85h64M66 105h46" stroke="#1F7A5A" stroke-width="8" stroke-linecap="round" opacity=".35"/>
+</svg>

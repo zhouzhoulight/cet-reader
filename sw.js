@@ -1,4 +1,4 @@
-const CACHE_NAME = "cet-reader-cache-v2026-06-04-2";
+const CACHE_NAME = "cet-reader-cache-v2026-06-06-redesign-assets-1";
 const CACHE_PREFIX = "cet-reader-cache";
 
 const CORE_ASSETS = [
@@ -13,8 +13,54 @@ const CORE_ASSETS = [
   "./data/0601.json",
   "./data/0602.json",
   "./data/0603.json",
-  "./icons/icon-192.svg",
-  "./icons/icon-512.svg"
+  "./data/0604.json",
+  "./icons/icon.svg",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+  "./icons/apple-touch-icon.png",
+  "./icons/logo-mark.svg",
+  "./icons/logo-horizontal.svg",
+  "./assets/onboarding/onboarding-1.svg",
+  "./assets/onboarding/onboarding-2.svg",
+  "./assets/onboarding/onboarding-3.svg",
+  "./assets/empty/empty-learning.svg",
+  "./assets/empty/empty-favorites.svg",
+  "./assets/empty/empty-plan.svg",
+  "./assets/empty/empty-data.svg",
+  "./assets/badges/streak-7.svg",
+  "./assets/badges/streak-30.svg",
+  "./assets/badges/learn-100.svg",
+  "./assets/badges/favorite-master.svg",
+  "./assets/badges/review-pro.svg",
+  "./assets/badges/persistence.svg",
+  "./assets/ui/trophy.svg",
+  "./assets/ui/progress-card-deco.svg",
+  "./assets/ui/study-plan-deco.svg",
+  "./assets/icons/home.svg",
+  "./assets/icons/learn.svg",
+  "./assets/icons/library.svg",
+  "./assets/icons/stats.svg",
+  "./assets/icons/profile.svg",
+  "./assets/icons/play.svg",
+  "./assets/icons/pause.svg",
+  "./assets/icons/next.svg",
+  "./assets/icons/prev.svg",
+  "./assets/icons/repeat.svg",
+  "./assets/icons/favorite.svg",
+  "./assets/icons/difficult.svg",
+  "./assets/icons/mastered.svg",
+  "./assets/icons/remove.svg",
+  "./assets/icons/settings.svg",
+  "./assets/icons/search.svg",
+  "./assets/icons/filter.svg",
+  "./assets/icons/calendar.svg",
+  "./assets/icons/import.svg",
+  "./assets/icons/backup.svg",
+  "./assets/icons/more.svg",
+  "./assets/icons/speaker.svg",
+  "./assets/icons/mic.svg",
+  "./assets/icons/note.svg",
+  "./assets/icons/refresh.svg"
 ];
 
 self.addEventListener("install", (event) => {
@@ -38,6 +84,10 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
+});
+
 self.addEventListener("fetch", (event) => {
   const request = event.request;
   if (request.method !== "GET") return;
@@ -47,7 +97,7 @@ self.addEventListener("fetch", (event) => {
 
   const isHtml = request.mode === "navigate" || request.destination === "document";
   const isStatic = ["script", "style", "manifest", "image"].includes(request.destination)
-    || /\.(?:js|css|json|svg)$/i.test(url.pathname);
+    || /\.(?:js|css|json|svg|png|mp3)$/i.test(url.pathname);
 
   if (isHtml) {
     event.respondWith(networkFirst(request));
