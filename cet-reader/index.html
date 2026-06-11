@@ -1,0 +1,358 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1f7a5a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="CET Reader">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>四六级朗读学习器</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <section id="errorBanner" class="error-banner" hidden>
+      <div>
+        <strong id="errorTitle">提示</strong>
+        <p id="errorMessage"></p>
+      </div>
+      <button id="copyErrorsBtn" class="small-btn" type="button">复制日志</button>
+    </section>
+
+    <main class="app-views">
+      <section id="launchView" class="view launch-view active" data-view="launch" aria-label="启动页">
+        <div class="launch-inner">
+          <img class="launch-logo" src="./icons/logo-mark.svg" alt="CET Reader">
+          <img class="launch-illustration" src="./assets/onboarding/onboarding-1.svg" alt="">
+          <p class="eyebrow">CET Reader</p>
+          <h1>四六级朗读学习器</h1>
+          <p class="launch-name">CET Reader</p>
+          <p class="launch-slogan">专业让积累更准，高效让备考更稳</p>
+          <div class="launch-actions">
+            <button id="startLearningBtn" class="wide-btn primary" type="button">开始学习</button>
+            <button id="continueLearningBtn" class="wide-btn ghost" type="button">继续上次学习</button>
+          </div>
+          <p class="version-line">版本 <span id="appVersionText">加载中</span></p>
+        </div>
+      </section>
+
+      <section id="homeView" class="view home-view" data-view="home" aria-label="学习首页">
+        <header class="home-head">
+          <div>
+            <p id="greetingText" class="home-greeting">上午好，同学</p>
+            <h2>坚持朗读，进步看得见</h2>
+          </div>
+          <button id="settingsBtn" class="round-btn" type="button" aria-label="设置"><img src="./assets/icons/settings.svg" alt=""></button>
+        </header>
+
+        <section class="today-card">
+          <img class="card-deco progress-deco" src="./assets/ui/progress-card-deco.svg" alt="">
+          <div class="ring" aria-label="今日进度">
+            <svg viewBox="0 0 120 120" role="img" aria-hidden="true">
+              <circle cx="60" cy="60" r="48" class="ring-bg"></circle>
+              <circle id="todayProgressRing" cx="60" cy="60" r="48" class="ring-fg"></circle>
+            </svg>
+            <strong id="todayPercentText">0%</strong>
+          </div>
+          <div class="today-main">
+            <p class="section-label">今日学习进度</p>
+            <h3><span id="todayLearnedText">0</span> / <span id="todayTargetText">32</span></h3>
+            <p class="muted">学习时长 <span id="todayMinutesText">0 分钟</span></p>
+            <button id="homeContinueBtn" class="wide-btn primary" type="button">继续学习</button>
+          </div>
+        </section>
+
+        <section class="home-card library-summary">
+          <div>
+            <p class="section-label">当前词库</p>
+            <h3 id="libraryTitle">正在加载词库</h3>
+            <p id="librarySub" class="muted">请稍候</p>
+            <p class="muted">可学 <span id="visibleCount">0</span> 条 · 已移除 <span id="hiddenCount">0</span> 条</p>
+          </div>
+          <button id="libraryBtn" class="text-link" type="button">切换</button>
+        </section>
+
+        <button id="dailyLibraryBtn" class="daily-card" type="button">
+          <img class="card-deco plan-deco" src="./assets/ui/study-plan-deco.svg" alt="">
+          <span id="dailyLibraryLabel">最新词库</span>
+          <strong id="dailyLibraryName">每日词库</strong>
+          <small id="dailyLibraryHint">从最新资料开始复习</small>
+        </button>
+
+        <section class="metric-grid" aria-label="学习数据">
+          <div><b id="streakCountText">1</b><span>连续学习</span></div>
+          <div><b id="totalLearnedText">0</b><span>累计学词</span></div>
+          <div><b id="accuracyText">0%</b><span>正确率</span></div>
+          <div><b id="totalMinutesText">0h</b><span>累计时长</span></div>
+        </section>
+
+        <section class="quick-grid" aria-label="快速入口">
+          <button id="quickDifficultBtn" type="button"><img src="./assets/icons/difficult.svg" alt=""><span>错词本</span><b id="difficultCount">0</b></button>
+          <button id="quickFavoriteBtn" type="button"><img src="./assets/icons/favorite.svg" alt=""><span>收藏</span><b id="favoriteCount">0</b></button>
+          <button id="quickRecordBtn" type="button"><img src="./assets/icons/calendar.svg" alt=""><span>学习记录</span><b id="learnedCount">0</b></button>
+        </section>
+
+        <section class="achievement-card">
+          <div class="section-head">
+            <h3>成就徽章</h3>
+            <span>后续增强</span>
+          </div>
+          <div class="badge-row">
+            <img src="./assets/badges/streak-7.svg" alt="连续 7 天">
+            <img src="./assets/badges/learn-100.svg" alt="学词 100">
+            <img src="./assets/badges/review-pro.svg" alt="复习高手">
+          </div>
+        </section>
+      </section>
+
+      <section id="studyView" class="view study-view" data-view="study" aria-label="单词学习页">
+        <header class="study-head">
+          <button id="backHomeBtn" class="round-btn" type="button" aria-label="返回首页"><img src="./assets/icons/prev.svg" alt=""></button>
+          <span id="entryIndex">0 / 0</span>
+          <div class="study-head-actions">
+            <button id="favoriteBtn" class="round-btn" type="button" aria-label="收藏"><img src="./assets/icons/favorite.svg" alt=""></button>
+            <button id="moreBtn" class="round-btn" type="button" aria-label="更多"><img src="./assets/icons/more.svg" alt=""></button>
+          </div>
+        </header>
+        <div class="progress-track top"><div id="progressFill" class="progress-fill"></div></div>
+
+        <article id="card" class="study-card" aria-live="polite">
+          <span id="entryType" class="type-pill">条目</span>
+          <h2 id="termText" class="term">选择词库开始</h2>
+          <div class="phonetic-row">
+            <span id="phoneticText">美音优先</span>
+            <button id="speakTermBtn" class="sound-btn" type="button"><img src="./assets/icons/speaker.svg" alt="">英文发音</button>
+          </div>
+
+          <section id="answerBox" class="answer-box">
+            <div class="meaning-line">
+              <p id="meaningText">打开词库后显示释义</p>
+              <button id="speakMeaningBtn" class="mini-sound" type="button"><img src="./assets/icons/speaker.svg" alt="">中文发音</button>
+            </div>
+            <button id="showAnswerBtn" class="text-link center" type="button">隐藏答案</button>
+            <div id="morphBlock" class="detail-card">
+              <h3>构词法</h3>
+              <p id="morphText"></p>
+            </div>
+            <div id="exampleBlock" class="detail-card">
+              <div class="detail-head">
+                <h3>例句 / 搭配</h3>
+                <button id="speakExampleBtn" class="mini-sound" type="button"><img src="./assets/icons/play.svg" alt="">例句朗读</button>
+              </div>
+              <p id="exampleText"></p>
+            </div>
+          </section>
+
+          <section class="pronounce-panel">
+            <button id="termAudioBtn" type="button"><img src="./assets/icons/speaker.svg" alt="">英文发音</button>
+            <button id="meaningAudioBtn" type="button"><img src="./assets/icons/speaker.svg" alt="">中文发音</button>
+            <button id="readEvalBtn" type="button"><img src="./assets/icons/mic.svg" alt="">跟读评测</button>
+          </section>
+
+          <section class="evaluation-card">
+            <div>
+              <h3>跟读评测</h3>
+              <p>状态：<span id="evalStatusText">未开始</span></p>
+              <small>当前版本仅支持朗读播放与词汇复习，跟读评测为后续功能</small>
+            </div>
+            <button id="startEvalBtn" class="wide-btn ghost" type="button"><img src="./assets/icons/mic.svg" alt="">开始跟读</button>
+          </section>
+
+          <section class="speech-preview">
+            <button id="togglePreviewBtn" class="text-link" type="button" aria-expanded="false">本条朗读内容预览</button>
+            <pre id="speechPreview" hidden></pre>
+          </section>
+        </article>
+
+        <section class="feedback-row">
+          <button id="unknownCurrentBtn" class="feedback-btn ghost" type="button">不认识</button>
+          <button id="knownCurrentBtn" class="feedback-btn primary" type="button">认识</button>
+        </section>
+
+        <section class="study-tools">
+          <button id="notesBtn" type="button"><img src="./assets/icons/note.svg" alt="">笔记</button>
+          <button id="removeCurrentBtn" type="button"><img src="./assets/icons/remove.svg" alt="">移出复习</button>
+          <button id="editCurrentBtn" type="button"><img src="./assets/icons/settings.svg" alt="">编辑</button>
+        </section>
+      </section>
+
+      <section id="libraryView" class="view library-view" data-view="library" aria-label="词库与设置页">
+        <header class="page-head">
+          <button id="libraryBackBtn" class="round-btn" type="button" aria-label="返回学习页"><img src="./assets/icons/prev.svg" alt=""></button>
+          <h2>词库与设置</h2>
+          <button id="refreshCacheBtn" class="round-btn" type="button" aria-label="刷新缓存"><img src="./assets/icons/refresh.svg" alt=""></button>
+        </header>
+
+        <section class="settings-card">
+          <div class="section-head">
+            <h3>我的词库</h3>
+            <button id="loadLibraryBtn" class="text-link" type="button">打开</button>
+          </div>
+          <label class="field compact">
+            <span>选择词库</span>
+            <select id="librarySelect"></select>
+          </label>
+          <button id="deleteLibraryBtn" class="wide-btn danger" type="button" hidden>删除当前用户词库</button>
+          <div id="libraryCards" class="library-cards"></div>
+        </section>
+
+        <section class="settings-card">
+          <div class="section-head">
+            <h3>筛选与列表</h3>
+            <button id="restoreAllBtn" class="text-link" type="button">恢复全部</button>
+          </div>
+          <label class="field search-field">
+            <span><img class="field-icon" src="./assets/icons/search.svg" alt="">搜索</span>
+            <input id="searchInput" type="search" placeholder="搜索英文或中文">
+          </label>
+          <div class="filter-grid">
+            <select id="typeFilter" aria-label="类型筛选">
+              <option value="all">单词 / 词组 / 句子</option>
+              <option value="word">只看单词</option>
+              <option value="phrase">只看词组</option>
+              <option value="sentence">只看句子</option>
+              <option value="root">词根</option>
+              <option value="correction">纠错</option>
+              <option value="summary">总结</option>
+              <option value="suspected">疑似错误</option>
+            </select>
+            <select id="rangeFilter" aria-label="复习范围">
+              <option value="active">全部未移除</option>
+              <option value="difficult">只看错词 / 不熟</option>
+              <option value="favorite">只看收藏</option>
+              <option value="unlearned">只看未掌握</option>
+              <option value="hidden">查看已移除</option>
+            </select>
+          </div>
+          <div id="entryList" class="entry-list"></div>
+        </section>
+
+        <section class="settings-card">
+          <h3>朗读设置</h3>
+          <label class="field compact">
+            <span>发音来源</span>
+            <select id="audioSourceSelect">
+              <option value="auto">自动：内置音频优先</option>
+              <option value="system">仅系统语音</option>
+              <option value="silent">静音模式</option>
+            </select>
+          </label>
+          <p class="status-chip">当前发音来源：<span id="pronunciationSourceText">检测中</span></p>
+          <label class="toggle"><input id="autoPlayToggle" type="checkbox" checked> 自动连续播放</label>
+          <label class="toggle"><input id="loopPlaybackToggle" type="checkbox"> 播完后循环</label>
+          <label class="toggle"><input id="randomToggle" type="checkbox"> 随机播放</label>
+          <label class="toggle"><input id="recallToggle" type="checkbox"> 背诵模式隐藏中文/构词法</label>
+          <label class="toggle"><input id="speakMeaningToggle" type="checkbox" checked> 朗读中文释义</label>
+          <label class="toggle"><input id="speakMorphToggle" type="checkbox"> 朗读构词法</label>
+          <label class="toggle"><input id="speakExampleToggle" type="checkbox"> 朗读例句/搭配</label>
+          <label class="toggle"><input id="spellToggle" type="checkbox" checked> 拼写单词</label>
+          <div class="range-grid">
+            <label class="field"><span>英文重复</span><input id="repeatInput" type="number" min="1" max="5" value="2"></label>
+            <label class="field"><span>语速</span><input id="rateInput" type="range" min="0.6" max="1.25" step="0.05" value="0.9"></label>
+            <label class="field"><span>音调</span><input id="pitchInput" type="range" min="0.7" max="1.3" step="0.05" value="1"></label>
+            <label class="field"><span>音量</span><input id="volumeInput" type="range" min="0" max="1" step="0.05" value="1"></label>
+          </div>
+          <label class="field"><span>英文声音</span><select id="englishVoiceSelect"></select></label>
+          <label class="field"><span>中文声音</span><select id="chineseVoiceSelect"></select></label>
+          <div class="voice-test-grid">
+            <button id="testEnglishVoiceBtn" class="wide-btn ghost" type="button">测试英文发音</button>
+            <button id="testChineseVoiceBtn" class="wide-btn ghost" type="button">测试中文发音</button>
+          </div>
+          <pre id="speechDiagnosticsBox" class="diagnostics-box">正在检测语音能力...</pre>
+        </section>
+
+        <section id="browserCompatBox" class="settings-card">
+          <h3>浏览器兼容提示</h3>
+          <p id="browserCompatText" class="muted">正在检测当前浏览器...</p>
+          <p class="muted">微信/QQ 内置浏览器可能限制朗读或离线能力，但不会阻止你继续学习。</p>
+        </section>
+
+        <section class="settings-card">
+          <h3>缓存与数据</h3>
+          <div class="status-list">
+            <p>缓存状态：<span id="cacheStatusText">检测中</span></p>
+            <p>上次刷新：<span id="lastCacheRefreshText">暂无记录</span></p>
+            <p id="pwaStatus" class="status-warn">用本地服务器或 GitHub Pages 打开后可启用离线缓存。</p>
+          </div>
+          <div class="maintenance-grid">
+            <button id="exportBackupBtn" class="wide-btn ghost" type="button"><img src="./assets/icons/backup.svg" alt="">导出备份</button>
+            <label class="wide-btn ghost file-like"><img src="./assets/icons/import.svg" alt="">导入备份<input id="backupInput" type="file" accept=".json,application/json"></label>
+            <button id="resetProgressBtn" class="wide-btn ghost" type="button">重置学习进度</button>
+            <button id="resetAllBtn" class="wide-btn danger" type="button">清空全部用户数据</button>
+          </div>
+        </section>
+
+        <section class="settings-card">
+          <h3>导入 txt / csv</h3>
+          <input id="importFileInput" type="file" accept=".txt,.csv,text/plain,text/csv">
+          <p class="hint">PWA 版本会把用户导入词库保存到 localStorage；Word 文件建议先另存为 txt 或 csv 后导入。</p>
+          <div id="importPreview" class="import-preview" hidden>
+            <h4>解析预览</h4>
+            <div id="previewTableWrap" class="preview-table-wrap"></div>
+            <button id="confirmImportBtn" class="wide-btn primary" type="button">确认导入</button>
+            <button id="cancelImportBtn" class="wide-btn ghost" type="button">取消导入</button>
+          </div>
+        </section>
+
+        <section class="settings-card">
+          <h3>错误日志</h3>
+          <button id="copyErrorsBtn2" class="wide-btn ghost" type="button">复制错误日志</button>
+          <pre id="errorLogBox" class="log-box"></pre>
+        </section>
+      </section>
+    </main>
+
+    <nav class="player" aria-label="播放器">
+      <div class="player-main">
+        <button id="prevBtn" class="player-btn" type="button" aria-label="上一条"><img src="./assets/icons/prev.svg" alt=""></button>
+        <button id="playPauseBtn" class="player-btn main" type="button"><img id="playPauseIcon" src="./assets/icons/play.svg" alt=""><span id="playPauseText">播放</span></button>
+        <button id="replayBtn" class="player-btn" type="button" aria-label="重播"><img src="./assets/icons/repeat.svg" alt=""></button>
+        <button id="nextBtn" class="player-btn" type="button" aria-label="下一条"><img src="./assets/icons/next.svg" alt=""></button>
+      </div>
+      <p id="playerStatus" class="player-status">空闲</p>
+    </nav>
+
+    <nav class="bottom-nav" aria-label="底部导航">
+      <button class="nav-btn active" data-nav-view="home" type="button"><img src="./assets/icons/home.svg" alt="">首页</button>
+      <button class="nav-btn" data-nav-view="study" type="button"><img src="./assets/icons/learn.svg" alt="">学习</button>
+      <button class="nav-btn" data-nav-view="library" type="button"><img src="./assets/icons/library.svg" alt="">词库</button>
+      <button class="nav-btn" data-nav-view="library" data-settings-jump="true" type="button"><img src="./assets/icons/profile.svg" alt="">我的</button>
+    </nav>
+  </div>
+
+  <dialog id="confirmRemoveDialog" class="confirm-dialog">
+    <form method="dialog">
+      <h2>移出当前单词？</h2>
+      <p>移出后将从复习列表中移除，但不会跳过下一个单词。</p>
+      <footer>
+        <button id="cancelRemoveBtn" class="wide-btn ghost" value="cancel" type="submit">取消</button>
+        <button id="confirmRemoveBtn" class="wide-btn danger" value="confirm" type="submit">确认移出</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="editDialog" class="edit-dialog">
+    <form method="dialog" id="editForm">
+      <header>
+        <h2>编辑条目</h2>
+        <button value="cancel" class="round-btn" type="submit" aria-label="关闭">×</button>
+      </header>
+      <label class="field"><span>英文 / 词条</span><input id="editTerm" required></label>
+      <label class="field"><span>中文释义</span><textarea id="editMeaning"></textarea></label>
+      <label class="field"><span>构词法</span><textarea id="editMorph"></textarea></label>
+      <label class="field"><span>例句 / 搭配</span><textarea id="editExample"></textarea></label>
+      <label class="field"><span>类型</span><select id="editType"><option value="word">单词</option><option value="phrase">词组</option><option value="sentence">句子</option><option value="root">词根</option><option value="correction">纠错</option><option value="summary">总结</option></select></label>
+      <footer>
+        <button id="restoreOriginalBtn" class="wide-btn ghost" type="button">恢复原始内容</button>
+        <button id="saveEditBtn" class="wide-btn primary" type="submit" value="save">保存</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <script src="./app.js"></script>
+</body>
+</html>

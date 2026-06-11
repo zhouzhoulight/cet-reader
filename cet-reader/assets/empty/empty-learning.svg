@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 180" role="img" aria-label="暂无学习内容">
+  <rect width="240" height="180" rx="28" fill="#FAF7F2"/>
+  <circle cx="198" cy="42" r="30" fill="#EAF5EF"/>
+  <circle cx="120" cy="90" r="58" fill="#fff" stroke="#DDE7DF" stroke-width="2"/>
+  <path d="M62 84h88a26 26 0 0 1 26 26v38H88a26 26 0 0 1-26-26V84Z" fill="none" stroke="#1F7A5A" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="120" y="164" text-anchor="middle" fill="#6F766F" font-family="-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif" font-size="14">暂无学习内容</text>
+</svg>

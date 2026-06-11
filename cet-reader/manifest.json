@@ -1,0 +1,25 @@
+{
+  "name": "四六级朗读学习器",
+  "short_name": "CET Reader",
+  "description": "适合四六级词汇复习的本地朗读学习器",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#1f7a5a",
+  "background_color": "#faf7f2",
+  "icons": [
+    {
+      "src": "./icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

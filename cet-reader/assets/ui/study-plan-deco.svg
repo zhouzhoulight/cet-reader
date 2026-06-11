@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 140" role="img" aria-label="学习计划装饰">
+  <rect x="38" y="30" width="96" height="86" rx="20" fill="#fff" stroke="#DDE7DF" stroke-width="2"/>
+  <path d="M58 60h54M58 82h38M58 104h64" stroke="#1F7A5A" stroke-width="7" stroke-linecap="round"/>
+  <path d="M150 74l16 16 34-42" fill="none" stroke="#1F7A5A" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

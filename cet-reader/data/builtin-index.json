@@ -1,0 +1,54 @@
+{
+  "version": "2026-06-11",
+  "libraries": [
+    {
+      "id": "builtin-0529",
+      "name": "0529 每日词汇构词法",
+      "file": "0529.json",
+      "group": "0529-0601",
+      "count": 78
+    },
+    {
+      "id": "builtin-0530",
+      "name": "0530 每日词汇构词法",
+      "file": "0530.json",
+      "group": "0529-0601",
+      "count": 109
+    },
+    {
+      "id": "builtin-0601",
+      "name": "0601 每日词汇整理",
+      "file": "0601.json",
+      "group": "0529-0601",
+      "count": 69
+    },
+    {
+      "id": "builtin-0602",
+      "name": "0602 每日词汇构词法",
+      "file": "0602.json",
+      "group": "0529-0603",
+      "count": 77
+    },
+    {
+      "id": "builtin-0603",
+      "name": "0603 每日词汇整理",
+      "file": "0603.json",
+      "group": "0529-0603",
+      "count": 33
+    },
+    {
+      "id": "builtin-0604",
+      "name": "0604 每日词汇整理",
+      "file": "0604.json",
+      "group": "0529-0604",
+      "count": 32
+    },
+    {
+      "id": "builtin-0611",
+      "name": "0611 每日词汇整理",
+      "file": "0611.json",
+      "group": "0529-0611",
+      "count": 21
+    }
+  ]
+}

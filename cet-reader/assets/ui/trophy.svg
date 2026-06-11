@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" role="img" aria-label="目标奖杯">
+  <rect width="160" height="160" rx="40" fill="#EAF5EF"/>
+  <path d="M52 38h56v22c0 24-13 42-28 42S52 84 52 60V38Z" fill="#fff" stroke="#1F7A5A" stroke-width="7"/>
+  <path d="M52 50H30c0 22 11 34 29 36M108 50h22c0 22-11 34-29 36M80 102v24M60 128h40" fill="none" stroke="#1F7A5A" stroke-width="7" stroke-linecap="round"/>
+</svg>
